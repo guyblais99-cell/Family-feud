@@ -1,0 +1,1065 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Family Feud Real-Time</title>
+    <style>
+        /* Base Styling */
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f0f4f8;
+            color: #1a202c;
+            text-align: center;
+            padding: 20px;
+            margin: 0;
+        }
+
+        /* -- NEW -- This class is added via JS to lock the viewport ONLY for the player screen */
+        body.player-view-active {
+            overflow: hidden;
+            padding: 0; /* Remove padding for a true full-screen experience on mobile */
+        }
+        
+        #app-container {
+            max-width: 950px;
+            margin: 0 auto;
+            background: #ffffff;
+            border-radius: 15px;
+            box-shadow: 0 10px 30px rgba(45, 55, 72, 0.2);
+            padding: 30px;
+            border: 5px solid #e53e3e;
+        }
+
+        /* When in locked player view, make the container full-screen */
+        body.player-view-active #app-container {
+            width: 100%;
+            height: 100vh; /* Use full viewport height */
+            border-radius: 0;
+            border: none;
+            display: flex; /* Helps center the player-screen content */
+            justify-content: center;
+            align-items: center;
+            box-sizing: border-box;
+        }
+
+
+        h1 {
+            color: #e53e3e;
+            font-size: 2.5em;
+            margin-bottom: 25px;
+        }
+        
+        /* Screen Management */
+        .screen { display: none; padding: 20px 0; }
+        .screen.active { display: block; }
+        
+        /* New rule to make player screen a centered flex container */
+        #player-screen.active {
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            width: 100%; /* Take up full width of container */
+        }
+
+
+        /* Input & Buttons */
+        input[type="text"], input[type="number"], select {
+            padding: 10px;
+            font-size: 1.1em;
+            margin: 5px;
+            border: 2px solid #a0aec0;
+            border-radius: 8px;
+        }
+        button {
+            padding: 15px 30px;
+            margin: 8px;
+            font-size: 1.1em;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s;
+            font-weight: bold;
+            text-transform: uppercase;
+        }
+        button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.15);
+        }
+        button:disabled {
+            cursor: not-allowed;
+            background-color: #cbd5e0 !important;
+            transform: none;
+            box-shadow: none;
+        }
+
+        #btn-create-gm { background-color: #38b2ac; color: white; }
+        #btn-join-player { background-color: #4299e1; color: white; }
+        #btn-join-cast { background-color: #f6ad55; color: white; }
+        .error-message { color: #c53030; font-weight: bold; margin-top: 15px; }
+
+        /* --- NEW ANIMATION & BOARD STYLES --- */
+        .points-banner {
+            font-size: 1.5em;
+            font-weight: 900;
+            color: #dd6b20;
+            margin-bottom: 15px;
+            animation: pulse-orange 1.5s infinite;
+        }
+        @keyframes pulse-orange {
+            0% { transform: scale(1); }
+            50% { transform: scale(1.05); }
+            100% { transform: scale(1); }
+        }
+
+        .answer-box {
+            background-color: #38b2ac;
+            color: white;
+            padding: 15px;
+            border-radius: 8px;
+            font-size: 1.3em;
+            font-weight: bold;
+            perspective: 1000px; /* For 3D flip effect */
+        }
+        .answer-flipper {
+            transition: transform 0.6s;
+            transform-style: preserve-3d;
+            position: relative;
+        }
+        .answer-box.revealed .answer-flipper {
+            transform: rotateY(180deg);
+        }
+        .answer-front, .answer-back {
+            -webkit-backface-visibility: hidden;
+            backface-visibility: hidden;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .answer-back {
+            transform: rotateY(180deg);
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+        }
+        .answer-rank {
+            background: rgba(255, 255, 255, 0.2);
+            padding: 5px 8px;
+            border-radius: 4px;
+        }
+        .answer-text {
+            flex-grow: 1;
+            text-transform: uppercase;
+            padding: 0 10px;
+            text-align: left;
+        }
+        .answer-points {
+            background: #e53e3e;
+            padding: 5px 10px;
+            border-radius: 4px;
+        }
+        .answer-box.gm-mode { cursor: pointer; }
+        .answer-box.gm-mode:hover { background-color: #319795; }
+        .answer-box.gm-mode.clicked {
+            background-color: #a0aec0;
+            cursor: not-allowed;
+        }
+        .answer-box.gm-mode.clicked:hover {
+             background-color: #a0aec0;
+        }
+        /* --- END ANIMATION & BOARD STYLES --- */
+
+        .question-title { font-size: 1.8em; font-weight: bold; color: #4299e1; margin-bottom: 25px; padding: 15px; background-color: #ebf8ff; border-radius: 10px; transition: all 0.2s ease-in-out; }
+        /* -- Style to make GM question clickable */
+        .question-title.clickable-to-reveal {
+            cursor: pointer;
+            border: 2px dashed #38b2ac;
+            background-color: #e6fffa;
+        }
+        .question-title.clickable-to-reveal:hover {
+            background-color: #b2f5ea;
+            transform: scale(1.01);
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        .board-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 30px; }
+        .score-board { padding: 15px; background-color: #f7fafc; border: 1px solid #e2e8f0; border-radius: 10px; display: flex; justify-content: space-around; font-size: 1.3em; font-weight: 600; margin-bottom: 20px; align-items: center; }
+        .team-score { flex: 1; padding: 0 10px; transition: transform 0.3s; }
+        .team-score.active-turn { transform: scale(1.1); font-weight: 900; }
+        .team-score:first-child { color: #48bb78; }
+        .team-score:last-child { color: #4299e1; }
+        .team-score span { font-size: 1.5em; font-weight: 800; }
+
+        /* --- Player List Styles --- */
+        .player-lists-container {
+            display: flex;
+            justify-content: space-around;
+            gap: 20px;
+            margin: 20px 0;
+            text-align: left;
+        }
+        .player-list {
+            background-color: #f7fafc;
+            border: 1px solid #e2e8f0;
+            border-radius: 8px;
+            padding: 15px;
+            flex: 1;
+        }
+        .player-list h4 {
+            margin-top: 0;
+            margin-bottom: 10px;
+            border-bottom: 2px solid #e2e8f0;
+            padding-bottom: 5px;
+        }
+        .player-list ul {
+            list-style-type: none;
+            padding: 0;
+            margin: 0;
+            max-height: 120px;
+            overflow-y: auto;
+        }
+        .player-list li {
+            padding: 5px 0;
+            font-weight: 500;
+        }
+        /* --- End Player List Styles --- */
+
+        .buzzer-display-row { margin: 20px 0; display: flex; justify-content: center; }
+        .buzzer-display-circle { width: 250px; height: 250px; border-radius: 50%; display: flex; flex-direction: column; justify-content: center; align-items: center; font-size: 1.1em; font-weight: 700; color: white; text-shadow: 0 2px 5px rgba(0, 0, 0, 0.3); transition: background-color 0.3s; box-shadow: 0 5px 15px rgba(0, 0, 0, 0.2); }
+        .buzzer-display-circle.neutral { background-color: #a0aec0; font-size: 2em; }
+        .buzzer-display-circle.active { background-color: #48bb78; animation: pulse 0.8s infinite alternate; box-shadow: 0 0 30px #48bb78; }
+        .buzzer-name { font-size: 2.2em; font-weight: 900; line-height: 1; }
+        @keyframes pulse { from { box-shadow: 0 0 10px #48bb78; } to { box-shadow: 0 0 30px #48bb78; } }
+
+        .strikes { display: flex; justify-content: center; gap: 20px; margin-bottom: 30px; }
+        .strike { width: 50px; height: 50px; background-color: #a0aec0; border-radius: 50%; display: flex; justify-content: center; align-items: center; font-size: 2.2em; color: white; font-weight: bold; }
+        .strike.active { background-color: #e53e3e; animation: shake 0.5s; box-shadow: 0 0 15px #e53e3e; }
+        @keyframes shake { 10%, 90% { transform: translate3d(-1px, 0, 0); } 20%, 80% { transform: translate3d(2px, 0, 0); } 30%, 50%, 70% { transform: translate3d(-4px, 0, 0); } 40%, 60% { transform: translate3d(4px, 0, 0); } }
+
+        /* GM Controls Styling */
+        .gm-controls-group { margin-bottom: 20px; padding: 15px; border: 1px solid #e2e8f0; border-radius: 8px; }
+        .gm-controls-group h4 { margin-top: 0; }
+        .hidden { display: none; }
+        #gm-add-strike { background-color: #e53e3e; color: white; }
+        #gm-next-question { background-color: #38b2ac; color: white; }
+        
+        /* Player Styling */
+        .buzzer-button { 
+            padding: 50px; 
+            background-color: #e53e3e; 
+            color: white; 
+            font-size: 3em; 
+            border-radius: 50%; 
+            cursor: pointer; 
+            border: 8px solid #c53030; 
+            margin-top: 0; /* Removed fixed margin */
+            width: 280px; 
+            height: 280px; 
+            box-shadow: 0 10px 20px rgba(0,0,0,0.3); 
+            transition: background-color 0.1s, transform 0.1s; 
+        }
+        .buzzer-button:active { background-color: #c53030; transform: scale(0.98); box-shadow: 0 5px 10px rgba(0,0,0,0.3); }
+        .buzzer-button:disabled { background-color: #a0aec0; border-color: #718096; cursor: not-allowed; box-shadow: none; }
+        /* -- Style for when this player has successfully buzzed in */
+        .buzzer-button.buzzed-in {
+            background-color: #48bb78 !important; /* Green */
+            border-color: #38a169 !important;
+        }
+        #buzzer-message { font-size: 1.6em; font-weight: bold; margin-top: 25px; }
+        
+        /* --- FAST MONEY STYLES --- */
+        #fast-money-screen { background: #2d3748; color: white; padding: 20px; border-radius: 15px; }
+        .fm-header { display: flex; justify-content: space-around; align-items: center; margin-bottom: 20px; font-size: 1.5em; }
+        .fm-timer { font-size: 3em; font-weight: bold; color: #e53e3e; }
+        .fm-total-score { font-size: 3em; font-weight: bold; color: #48bb78; }
+        .fm-question-grid { display: grid; grid-template-columns: 1fr 100px 80px 100px 80px; gap: 10px; align-items: center; margin-bottom: 10px; font-size: 1.2em; }
+        .fm-question-text { text-align: left; }
+        .fm-player-answer { background: #4a5568; color: white; border: none; padding: 8px; border-radius: 5px; text-align: center; }
+        .fm-player-score { font-weight: bold; }
+        #fm-win-message { font-size: 3em; color: #f6ad55; text-shadow: 0 0 15px #f6ad55; animation: pulse-orange 1s infinite; }
+    </style>
+</head>
+<body>
+
+<div id="app-container">
+    
+    <div id="join-screen" class="screen active">
+        <h1>Welcome to Family Feud! 🇨🇦</h1>
+        <input type="text" id="game-code-input" placeholder="Enter Game Code" maxlength="8">
+        <div class="role-selection">
+            <button id="btn-create-gm">Create New Game (GM)</button>
+            <button id="btn-join-player">Join as Player</button>
+            <button id="btn-join-cast">Join as Cast Screen</button>
+        </div>
+        <p id="join-error-message" class="error-message"></p>
+    </div>
+
+    <div id="gm-screen" class="screen">
+        <h2>GM Console - Code: <span id="gm-game-code"></span></h2>
+        
+        <div class="gm-controls-group">
+            <h4>Game Setup</h4>
+            <input type="text" id="team1-name-input" placeholder="Team 1 Name" data-team="1">
+            <input type="text" id="team2-name-input" placeholder="Team 2 Name" data-team="2">
+            <select id="topic-type-select">
+                <option value="KID_FRIENDLY">Kid-Friendly</option>
+                <option value="ADULT_FRIENDLY">Adult-Friendly</option>
+            </select>
+            <select id="topic-name-select" style="min-width: 200px;"></select>
+            <button id="gm-load-topic-btn" style="background-color: #48bb78; color: white;">Load Topic</button>
+        </div>
+        
+        <div class="gm-controls-group">
+            <h4>Round Controls</h4>
+            <button id="gm-next-question">Next Question (Round <span id="gm-round-num">1</span>)</button>
+            <button id="gm-reveal-all">Reveal All</button>
+            <button id="gm-reset-buzz" style="background-color: #f6ad55; color: white;">Reset Buzzer</button>
+        </div>
+
+        <div id="gm-faceoff-controls" class="gm-controls-group hidden">
+            <h4>Face-Off / Steal Actions</h4>
+            <p id="faceoff-status-text"></p>
+            <div id="faceoff-second-player-controls" class="hidden">
+                <button id="gm-second-player-higher" style="background-color: #48bb78; color: white;">Opponent's Answer is Higher</button>
+                <button id="gm-second-player-lower" style="background-color: #e53e3e; color: white;">Opponent's is Lower / Not on Board</button>
+            </div>
+            <div id="play-pass-buttons" class="hidden">
+                <button id="gm-play-btn" style="background-color: #48bb78; color: white;">Play</button>
+                <button id="gm-pass-btn" style="background-color: #f6ad55; color: white;">Pass</button>
+            </div>
+            <div id="steal-buttons" class="hidden">
+                 <button id="gm-steal-success-btn" style="background-color: #48bb78; color: white;">Steal Success</button>
+                 <button id="gm-steal-fail-btn" style="background-color: #e53e3e; color: white;">Steal Fail</button>
+            </div>
+        </div>
+
+        <div class="gm-controls-group">
+            <h4>In-Play Controls</h4>
+            <p>Controlling Team: <strong id="gm-controlling-team">None</strong></p>
+            <button id="gm-add-strike">Add Strike</button>
+            <button id="gm-award-points-btn" style="background-color: #38b2ac; color: white;">Award Points to Controlling Team</button>
+        </div>
+
+        <div id="gm-end-game-controls" class="gm-controls-group hidden">
+             <h4>End of Game</h4>
+             <p id="final-winner-text"></p>
+             <button id="gm-start-fm-btn" style="background-color: #f6ad55; color: white;">Start Fast Money</button>
+        </div>
+        
+        <div class="gm-integrated-board" style="margin-top: 40px; padding-top: 20px; border-top: 2px dashed #e2e8f0;">
+            <div id="gm-points-banner" class="points-banner"></div>
+            <div id="gm-board-question-display" class="question-title"></div>
+            <div class="score-board">
+                <div class="team-score" id="gm-team1-title">Team 1: <span id="gm-team1-score">0</span></div>
+                <div style="color: #e53e3e;">Round Points: <span id="gm-round-points-view">0</span></div>
+                <div class="team-score" id="gm-team2-title">Team 2: <span id="gm-team2-score">0</span></div>
+            </div>
+            <div class="player-lists-container">
+                <div class="player-list">
+                    <h4 id="gm-team1-list-title">Team 1 Players</h4>
+                    <ul id="gm-team1-players-list"></ul>
+                </div>
+                <div class="player-list">
+                    <h4 id="gm-team2-list-title">Team 2 Players</h4>
+                    <ul id="gm-team2-players-list"></ul>
+                </div>
+            </div>
+            <div class="buzzer-display-row">
+                <div id="gm-buzzer-display" class="buzzer-display-circle neutral">Ready</div>
+            </div>
+            <div class="strikes" id="gm-strikes-display">
+                <div class="strike">X</div><div class="strike">X</div><div class="strike">X</div>
+            </div>
+            <div id="gm-board-answers" class="board-grid"></div>
+        </div>
+    </div>
+    
+    <div id="player-screen" class="screen">
+        <h2>Player Console</h2>
+        <p>Game Code: <span id="player-game-code"></span></p>
+        <button id="forget-player-btn" class="hidden" style="background-color:#e53e3e; color:white; font-size: 0.8em; padding: 8px 15px;">Forget Me & Re-join</button>
+        <div id="player-registration">
+            <input type="text" id="player-name-input" placeholder="Your Name" required>
+            <select id="player-team-select">
+                <option value="1" id="team1-option">Team 1</option>
+                <option value="2" id="team2-option">Team 2</option>
+            </select>
+            <button id="player-register-btn">Register</button>
+        </div>
+        <div id="player-buzzer-area" class="hidden">
+            <button id="buzzer-btn" class="buzzer-button">BUZZ IN!</button>
+            <p id="buzzer-message"></p>
+        </div>
+    </div>
+
+    <div id="game-board-screen" class="screen">
+        <p id="cast-topic-info" style="font-size: 1.2em; color: #718096;">Waiting for GM to load a topic...</p>
+        <div id="cast-points-banner" class="points-banner"></div>
+        <div id="cast-board-question-display" class="question-title"></div>
+        <div class="score-board">
+            <div class="team-score" id="cast-team1-title">Team 1: <span id="cast-team1-score">0</span></div>
+            <div style="color: #e53e3e;">Round Points: <span id="cast-round-points-view">0</span></div>
+            <div class="team-score" id="cast-team2-title">Team 2: <span id="cast-team2-score">0</span></div>
+        </div>
+         <div class="player-lists-container">
+            <div class="player-list">
+                <h4 id="cast-team1-list-title">Team 1 Players</h4>
+                <ul id="cast-team1-players-list"></ul>
+            </div>
+            <div class="player-list">
+                <h4 id="cast-team2-list-title">Team 2 Players</h4>
+                <ul id="cast-team2-players-list"></ul>
+            </div>
+        </div>
+        <div class="buzzer-display-row">
+            <div id="cast-buzzer-display" class="buzzer-display-circle neutral">Ready</div>
+        </div>
+        <div class="strikes" id="cast-strikes-display">
+            <div class="strike">X</div><div class="strike">X</div><div class="strike">X</div>
+        </div>
+        <div id="cast-board-answers" class="board-grid"></div>
+    </div>
+
+    <div id="fast-money-screen" class="screen">
+        <h1>FAST MONEY!</h1>
+        <div class="fm-header">
+            <div id="fm-player-indicator">Player 1</div>
+            <div id="fm-timer" class="fm-timer">00</div>
+            <div id="fm-total-score-container">Total: <span id="fm-total-score" class="fm-total-score">0</span></div>
+        </div>
+        <div id="fm-board"></div>
+        <div id="fm-win-message" class="hidden">WINNER! 200 POINTS!</div>
+        <div id="gm-fm-controls" class="gm-controls-group" style="margin-top: 20px;">
+            <h4>Fast Money Controls</h4>
+            <button id="gm-fm-start-player1">Start Player 1 (20s)</button>
+            <button id="gm-fm-start-player2" disabled>Start Player 2 (25s)</button>
+            <button id="gm-fm-reveal-scores">Reveal Final Scores</button>
+            <button id="gm-fm-end-game" style="background-color: #e53e3e; color: white;">End Game & Reset</button>
+        </div>
+    </div>
+</div>
+
+<audio id="sound-theme" src=""></audio>
+<audio id="sound-correct" src=""></audio>
+<audio id="sound-strike" src=""></audio>
+<audio id="sound-buzz-in" src=""></audio>
+<audio id="sound-fm-tick" src=""></audio>
+<audio id="sound-fm-timeout" src=""></audio>
+
+<script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/9.6.1/firebase-app.js";
+    import { getDatabase, ref, onValue, set, update, get, push } from "https://www.gstatic.com/firebasejs/9.6.1/firebase-database.js";
+    
+    const firebaseConfig = {
+      apiKey: "AIzaSyCgYbPYeT8aALFtdd4mzSqdnOEODUi85SY",
+      authDomain: "familyfeudblais.firebaseapp.com",
+      databaseURL: "https://familyfeudblais-default-rtdb.firebaseio.com",
+      projectId: "familyfeudblais",
+      storageBucket: "familyfeudblais.firebasestorage.app",
+      messagingSenderId: "621605126761",
+      appId: "1:621605126761:web:88cc5ce5542fe56fde98f8",
+      measurementId: "G-5ZBDY71Z7C"
+    };
+    const app = initializeApp(firebaseConfig);
+    const database = getDatabase(app);
+    let gameRef = null;
+    
+    // CORRECTED: Full and structurally valid TOPIC_DATA object
+    const TOPIC_DATA = {
+        KID_FRIENDLY: {
+            'CANADIAN_FUN': { displayName: "Canadian Fun", questions: [ { question: "Name a famous Canadian animal.", answers: [{ text: "Moose", points: 30 }, { text: "Beaver", points: 25 }, { text: "Polar Bear", points: 15 }, { text: "Canada Goose", points: 10 }, { text: "Grizzly Bear", points: 8 }, { text: "Caribou / Reindeer", points: 5 }] }, { question: "Name something you might put maple syrup on (besides pancakes).", answers: [{ text: "Waffles / French Toast", points: 35 }, { text: "Oatmeal / Cereal", points: 25 }, { text: "Ice Cream / Dessert", points: 15 }, { text: "Bacon / Sausage", points: 10 }, { text: "Coffee / Tea", points: 8 }, { text: "Snow (Tire D'érable)", points: 7 }] }, { question: "Name a word Canadians often say.", answers: [{ text: "Eh", points: 40 }, { text: "Sorry", points: 25 }, { text: "Toque", points: 15 }, { text: "Poutine", points: 10 }, { text: "Loonie / Toonie", points: 5 }, { text: "Timmies", points: 5 }] }, { question: "Name a Canadian city beginning with V or H.", answers: [{ text: "Vancouver", points: 40 }, { text: "Halifax", points: 25 }, { text: "Victoria", points: 20 }, { text: "Hamilton", points: 15 }, { text: "Moncton", points: 0 }, { text: "Calgary", points: 0 }] }, { question: "Name something associated with Canadian winter.", answers: [{ text: "Snow / Snowfall", points: 35 }, { text: "Hockey / Skating", points: 25 }, { text: "Toques / Mittens / Scarf", points: 15 }, { text: "Skiing / Snowboarding", points: 10 }, { text: "Plows / Shovels", points: 10 }, { text: "Very Cold / Freezing", points: 5 }] }, { question: "Name a sport played on ice in Canada (other than hockey).", answers: [{ text: "Curling", points: 60 }, { text: "Figure Skating", points: 30 }, { text: "Speed Skating", points: 10 }, { text: "Ice Sledding", points: 0 }, { text: "Broomball", points: 0 }, { text: "Ringette", points: 0 }] }, { question: "Name a cartoon character or movie from Canada.", answers: [{ text: "Paw Patrol", points: 35 }, { text: "Caillou", points: 25 }, { text: "ReBoot", points: 15 }, { text: "Degrassi (Series)", points: 10 }, { text: "The Raccoons (Series)", points: 10 }, { text: "Total Drama Island", points: 5 }] }, { question: "Name a type of berry found in Canada.", answers: [{ text: "Blueberry", points: 40 }, { text: "Strawberry", points: 25 }, { text: "Raspberry", points: 15 }, { text: "Cranberry", points: 10 }, { text: "Saskatoon Berry", points: 10 }, { text: "Cloudberry", points: 0 }] }, { question: "Name a color found on the Canadian flag.", answers: [{ text: "Red", points: 65 }, { text: "White", points: 35 }, { text: "Green", points: 0 }, { text: "Blue", points: 0 }, { text: "Yellow", points: 0 }, { text: "Black", points: 0 }] } ] },
+            'CARTOONS_MOVIES': { displayName: "Cartoons & Movies", questions: [ { question: "Name a classic Disney princess.", answers: [{ text: "Cinderella", points: 30 }, { text: "Snow White", points: 25 }, { text: "Ariel", points: 15 }, { text: "Belle", points: 10 }, { text: "Aurora", points: 10 }, { text: "Jasmine", points: 10 }] }, { question: "Name a character from SpongeBob SquarePants.", answers: [{ text: "SpongeBob", points: 35 }, { text: "Patrick", points: 25 }, { text: "Squidward", points: 15 }, { text: "Mr. Krabs", points: 10 }, { text: "Sandy", points: 10 }, { text: "Gary", points: 5 }] }, { question: "Name something a superhero wears.", answers: [{ text: "Cape", points: 40 }, { text: "Mask", points: 20 }, { text: "Spandex/Suit", points: 15 }, { text: "Boots", points: 10 }, { text: "Gloves", points: 10 }, { text: "Belt", points: 5 }] }, { question: "Name a movie where toys come to life.", answers: [{ text: "Toy Story", points: 50 }, { text: "Small Soldiers", points: 20 }, { text: "The LEGO Movie", points: 15 }, { text: "Puppet Master", points: 10 }, { text: "Chucky", points: 5 }, { text: "9", points: 0 }] }, { question: "Name a blue cartoon character.", answers: [{ text: "Smurf", points: 30 }, { text: "Sonic the Hedgehog", points: 25 }, { text: "Genie (Aladdin)", points: 15 }, { text: "Dory (Finding Nemo)", points: 10 }, { text: "Grover (Sesame St)", points: 10 }, { text: "Blue (Blue's Clues)", points: 10 }] }, { question: "Name an animal sidekick in a Disney movie.", answers: [{ text: "Olaf (Frozen)", points: 35 }, { text: "Timon & Pumbaa (Lion King)", points: 20 }, { text: "Sebastian (Little Mermaid)", points: 15 }, { text: "Pascal (Tangled)", points: 10 }, { text: "Abu (Aladdin)", points: 10 }, { text: "Pua (Moana)", points: 10 }] }, { question: "Name a yellow cartoon character.", answers: [{ text: "SpongeBob", points: 40 }, { text: "Pikachu", points: 25 }, { text: "Mickey Mouse", points: 15 }, { text: "Minion", points: 10 }, { text: "Winnie the Pooh", points: 5 }, { text: "Simpsons Character", points: 5 }] }, { question: "Name a cartoon that features talking animals.", answers: [{ text: "Looney Tunes", points: 30 }, { text: "Tom and Jerry", points: 25 }, { text: "Lion King", points: 15 }, { text: "Peppa Pig", points: 10 }, { text: "Scooby-Doo", points: 10 }, { text: "My Little Pony", points: 10 }] }, { question: "Name a movie set under the sea.", answers: [{ text: "The Little Mermaid", points: 35 }, { text: "Finding Nemo", points: 25 }, { text: "Finding Dory", points: 15 }, { text: "SpongeBob Movie", points: 10 }, { text: "Shark Tale", points: 10 }, { text: "Moana", points: 5 }] } ] },
+            'ANIMAL_KINGDOM': { displayName: "Animal Kingdom", questions: [ { question: "Name an animal that hops.", answers: [{ text: "Kangaroo", points: 30 }, { text: "Rabbit / Bunny", points: 25 }, { text: "Frog / Toad", points: 15 }, { text: "Grasshopper", points: 10 }, { text: "Cricket", points: 10 }, { text: "Gerbil / Mouse", points: 10 }] }, { question: "Name a type of bird you might see in a park.", answers: [{ text: "Pigeon", points: 35 }, { text: "Sparrow", points: 20 }, { text: "Duck", points: 15 }, { text: "Robin", points: 10 }, { text: "Crow / Raven", points: 10 }, { text: "Goose", points: 10 }] }, { question: "Name an animal found in the ocean.", answers: [{ text: "Shark", points: 30 }, { text: "Whale", points: 25 }, { text: "Dolphin", points: 15 }, { text: "Fish", points: 10 }, { text: "Octopus", points: 10 }, { text: "Sea Turtle", points: 10 }] }, { question: "Name something an animal eats.", answers: [{ text: "Grass / Hay", points: 35 }, { text: "Meat / Flesh", points: 25 }, { text: "Bugs / Insects", points: 15 }, { text: "Seeds / Nuts", points: 10 }, { text: "Fruit / Berries", points: 10 }, { text: "Fish", points: 5 }] }, { question: "Name the sound a farm animal makes.", answers: [{ text: "Moo (Cow)", points: 30 }, { text: "Oink (Pig)", points: 25 }, { text: "Baa (Sheep)", points: 15 }, { text: "Neigh / Whinny (Horse)", points: 10 }, { text: "Cluck (Chicken)", points: 10 }, { text: "Quack (Duck)", points: 10 }] }, { question: "Name an animal with a long neck.", answers: [{ text: "Giraffe", points: 50 }, { text: "Ostrich / Emu", points: 20 }, { text: "Camel", points: 15 }, { text: "Llama / Alpaca", points: 10 }, { text: "Swan", points: 5 }, { text: "Goose", points: 0 }] }, { question: "Name a type of insect.", answers: [{ text: "Ant", points: 30 }, { text: "Bee / Wasp", points: 25 }, { text: "Butterfly / Moth", points: 15 }, { text: "Fly / Mosquito", points: 10 }, { text: "Ladybug", points: 10 }, { text: "Grasshopper", points: 10 }] }, { question: "Name a cat breed.", answers: [{ text: "Tabby", points: 35 }, { text: "Siamese", points: 20 }, { text: "Persian", points: 15 }, { text: "Maine Coon", points: 10 }, { text: "Sphynx", points: 10 }, { text: "Ragdoll", points: 10 }] }, { question: "Name a wild animal you would see in the woods.", answers: [{ text: "Deer", points: 30 }, { text: "Bear", points: 25 }, { text: "Squirrel", points: 15 }, { text: "Fox", points: 10 }, { text: "Wolf", points: 10 }, { text: "Racoon", points: 10 }] } ] },
+            'SCHOOL_DAYS': { displayName: "School Days", questions: [ { question: "Name a subject you take in school.", answers: [{ text: "Math", points: 40 }, { text: "Science", points: 20 }, { text: "English / Language Arts", points: 15 }, { text: "History / Social Studies", points: 10 }, { text: "Art", points: 10 }, { text: "Gym / Phys Ed", points: 5 }] }, { question: "Name something a student carries in their backpack.", answers: [{ text: "Books / Notebooks", points: 35 }, { text: "Pencils / Pens", points: 20 }, { text: "Lunch / Food", points: 15 }, { text: "Folders / Binder", points: 10 }, { text: "Laptop / Tablet", points: 10 }, { text: "Water Bottle", points: 5 }] }, { question: "Name something you write with.", answers: [{ text: "Pen", points: 35 }, { text: "Pencil", points: 30 }, { text: "Crayon", points: 15 }, { text: "Marker", points: 10 }, { text: "Chalk", points: 5 }, { text: "Paint Brush", points: 5 }] }, { question: "Name an object found in a classroom.", answers: [{ text: "Desk / Table", points: 30 }, { text: "Chair", points: 20 }, { text: "Whiteboard / Chalkboard", points: 15 }, { text: "Computer", points: 10 }, { text: "Globe / Map", points: 10 }, { text: "Ruler / Calculator", points: 15 }] }, { question: "Name something you do during recess.", answers: [{ text: "Play Tag / Chase", points: 35 }, { text: "Swing / Slide", points: 25 }, { text: "Talk to Friends", points: 15 }, { text: "Play Sports (e.g., Soccer)", points: 10 }, { text: "Eat Snack", points: 10 }, { text: "Run Around", points: 5 }] }, { question: "Name a type of school supply.", answers: [{ text: "Pencil Case", points: 30 }, { text: "Glue / Tape", points: 25 }, { text: "Scissors", points: 15 }, { text: "Eraser", points: 10 }, { text: "Notebook / Paper", points: 10 }, { text: "Ruler", points: 10 }] }, { question: "Name something a teacher might say.", answers: [{ text: "Pay attention", points: 35 }, { text: "Good job", points: 20 }, { text: "Time for class", points: 15 }, { text: "Quiet down", points: 10 }, { text: "Do your homework", points: 10 }, { text: "Take out your books", points: 10 }] }, { question: "Name a place in the school besides a classroom.", answers: [{ text: "Gymnasium / Gym", points: 35 }, { text: "Library", points: 25 }, { text: "Cafeteria / Lunchroom", points: 15 }, { text: "Principal's Office", points: 10 }, { text: "Bathroom", points: 10 }, { text: "Playground", points: 5 }] }, { question: "Name a popular school holiday.", answers: [{ text: "Christmas / Winter Break", points: 40 }, { text: "Summer Vacation", points: 25 }, { text: "Spring Break", points: 15 }, { text: "Halloween", points: 10 }, { text: "Thanksgiving", points: 5 }, { text: "Easter", points: 5 }] } ] },
+            'FOOD_SNACKS': { displayName: "Food & Snacks", questions: [ { question: "Name a popular ice cream flavor.", answers: [{ text: "Vanilla", points: 40 }, { text: "Chocolate", points: 25 }, { text: "Strawberry", points: 15 }, { text: "Cookie Dough", points: 10 }, { text: "Mint Chocolate Chip", points: 5 }, { text: "Butter Pecan", points: 5 }] }, { question: "Name a red fruit.", answers: [{ text: "Apple", points: 35 }, { text: "Strawberry", points: 25 }, { text: "Cherry", points: 15 }, { text: "Raspberry", points: 10 }, { text: "Watermelon", points: 10 }, { text: "Tomato", points: 5 }] }, { question: "Name a vegetable that is orange.", answers: [{ text: "Carrot", points: 50 }, { text: "Pumpkin / Squash", points: 20 }, { text: "Sweet Potato", points: 15 }, { text: "Orange Bell Pepper", points: 10 }, { text: "Yam", points: 5 }, { text: "Apricot", points: 0 }] }, { question: "Name a type of chip flavor.", answers: [{ text: "Plain / Salted", points: 35 }, { text: "BBQ", points: 20 }, { text: "Sour Cream & Onion", points: 15 }, { text: "Ketchup / All Dressed", points: 10 }, { text: "Cheese / Cheddar", points: 10 }, { text: "Dill Pickle", points: 10 }] }, { question: "Name a topping you might put on pizza.", answers: [{ text: "Pepperoni", points: 40 }, { text: "Cheese", points: 20 }, { text: "Mushroom", points: 15 }, { text: "Sausage", points: 10 }, { text: "Onion", points: 10 }, { text: "Green Pepper", points: 5 }] }, { question: "Name a dessert with chocolate.", answers: [{ text: "Chocolate Cake", points: 35 }, { text: "Brownie", points: 25 }, { text: "Cookie (Chocolate Chip)", points: 15 }, { text: "Chocolate Bar", points: 10 }, { text: "Chocolate Milkshake", points: 10 }, { text: "Mousse", points: 5 }] }, { question: "Name a cold drink besides water.", answers: [{ text: "Soda / Pop", points: 35 }, { text: "Juice (Orange, Apple)", points: 25 }, { text: "Milk", points: 15 }, { text: "Iced Tea", points: 10 }, { text: "Smoothie", points: 10 }, { text: "Lemonade", points: 5 }] }, { question: "Name a food that is easy to eat with your hands.", answers: [{ text: "Pizza", points: 30 }, { text: "Sandwich", points: 25 }, { text: "Cookie", points: 15 }, { text: "Fries", points: 10 }, { text: "Apple / Banana", points: 10 }, { text: "Taco / Burrito", points: 10 }] }, { question: "Name a type of pasta.", answers: [{ text: "Spaghetti", points: 40 }, { text: "Macaroni", points: 25 }, { text: "Penne", points: 15 }, { text: "Fettuccine", points: 10 }, { text: "Lasagna", points: 5 }, { text: "Ravioli", points: 5 }] } ] },
+            'OUTSIDE_FUN': { displayName: "Outside Fun", questions: [ { question: "Name something you do at the beach.", answers: [{ text: "Swim", points: 35 }, { text: "Build Sandcastle", points: 25 }, { text: "Lay in Sun", points: 15 }, { text: "Play Sports (Volleyball)", points: 10 }, { text: "Collect Shells", points: 10 }, { text: "Look for Crabs", points: 5 }] }, { question: "Name something you need to go camping.", answers: [{ text: "Tent", points: 40 }, { text: "Sleeping Bag", points: 20 }, { text: "Food", points: 15 }, { text: "Flashlight", points: 10 }, { text: "Matches / Lighter", points: 10 }, { text: "Bug Spray", points: 5 }] }, { question: "Name a game you can play outside.", answers: [{ text: "Tag", points: 30 }, { text: "Hide-and-Seek", points: 25 }, { text: "Soccer", points: 15 }, { text: "Baseball / Catch", points: 10 }, { text: "Frisbee", points: 10 }, { text: "Red Light, Green Light", points: 10 }] }, { question: "Name something you see in the sky during the day.", answers: [{ text: "Sun", points: 40 }, { text: "Clouds", points: 30 }, { text: "Birds", points: 15 }, { text: "Airplane", points: 10 }, { text: "Moon / Stars (rarely)", points: 5 }, { text: "Kite", points: 0 }] }, { question: "Name a place you would go hiking.", answers: [{ text: "Mountain", points: 35 }, { text: "Forest / Woods", points: 25 }, { text: "Park / Trail", points: 15 }, { text: "Hill", points: 10 }, { text: "Canyon", points: 10 }, { text: "River Bank", points: 5 }] }, { question: "Name a color of a flower.", answers: [{ text: "Red", points: 30 }, { text: "Yellow", points: 25 }, { text: "Pink", points: 15 }, { text: "White", points: 10 }, { text: "Blue / Purple", points: 10 }, { text: "Orange", points: 10 }] }, { question: "Name something you might ride (besides a car).", answers: [{ text: "Bicycle", points: 40 }, { text: "Horse", points: 20 }, { text: "Skateboard / Scooter", points: 15 }, { text: "Bus", points: 10 }, { text: "Motorcycle", points: 10 }, { text: "Train", points: 5 }] }, { question: "Name a thing that flies.", answers: [{ text: "Bird", points: 40 }, { text: "Airplane", points: 25 }, { text: "Insect (Bee, Fly)", points: 15 }, { text: "Kite", points: 10 }, { text: "Helicopter", points: 5 }, { text: "Drone", points: 5 }] }, { question: "Name something you use to play in the water.", answers: [{ text: "Pool Noodle / Float", points: 30 }, { text: "Bucket / Shovel", points: 25 }, { text: "Water Gun", points: 15 }, { text: "Ball", points: 10 }, { text: "Goggles", points: 10 }, { text: "Flippers", points: 10 }] } ] }
+        },
+        ADULT_FRIENDLY: { 'HOME_DIY':{displayName:"Home & DIY",questions:[{question:"Name something found in a typical toolbox.",answers:[{text:"Hammer",points:35},{text:"Screwdriver",points:25},{text:"Wrench",points:15},{text:"Pliers",points:10},{text:"Tape Measure",points:10},{text:"Nails / Screws",points:5}]},{question:"Name a project you should probably hire a professional for.",answers:[{text:"Plumbing / Pipes",points:40},{text:"Electrical Wiring",points:30},{text:"Roof Repair / Replacement",points:15},{text:"Foundation Repair",points:10},{text:"Major Renovations (e.g. kitchen)",points:5},{text:"HVAC / Furnace",points:0}]},{question:"Name a way to make your kitchen look more modern.",answers:[{text:"Paint Cabinets",points:30},{text:"New Countertops",points:25},{text:"Stainless Steel Appliances",points:15},{text:"Install Backsplash",points:10},{text:"Update Lighting",points:10},{text:"New Hardware (Knobs)",points:10}]},{question:"Name a reason you call a locksmith.",answers:[{text:"Locked Keys in House/Car",points:40},{text:"Lost Keys",points:25},{text:"Need New Locks / Re-keying",points:15},{text:"Broken Key in Lock",points:10},{text:"Safe Opening",points:5},{text:"Security System Install",points:5}]},{question:"Name a plant or flower commonly used for landscaping.",answers:[{text:"Rose",points:35},{text:"Tulip / Daffodil",points:20},{text:"Hostas",points:15},{text:"Marigold",points:10},{text:"Hydrangea",points:10},{text:"Lavender",points:10}]},{question:"Name something you need to paint a room.",answers:[{text:"Paint",points:40},{text:"Brush / Roller",points:25},{text:"Drop Cloth / Tarp",points:15},{text:"Painter's Tape",points:10},{text:"Ladder / Stepladder",points:5},{text:"Tray / Bucket",points:5}]},{question:"Name a type of floor covering (besides carpet).",answers:[{text:"Hardwood / Wood",points:40},{text:"Tile (Ceramic)",points:25},{text:"Laminate",points:15},{text:"Vinyl / Linoleum",points:10},{text:"Concrete / Stone",points:5},{text:"Rugs",points:5}]},{question:"Name an emergency item you should keep in your car.",answers:[{text:"First Aid Kit",points:30},{text:"Jumper Cables",points:25},{text:"Flashlight",points:15},{text:"Spare Tire / Jack",points:10},{text:"Blanket",points:10},{text:"Flares / Road Markers",points:10}]},{question:"Name a chore you do outside in the summer.",answers:[{text:"Mow the Lawn",points:40},{text:"Weed the Garden",points:25},{text:"Water Plants",points:15},{text:"Clean Grill",points:10},{text:"Pool Maintenance",points:5},{text:"Wash the Car",points:5}]}]}, '80S_NOSTALGIA':{displayName:"80s/90s Nostalgia",questions:[{question:"Name a popular 90s TV show.",answers:[{text:"Friends",points:40},{text:"Seinfeld",points:25},{text:"Saved by the Bell",points:15},{text:"Frasier",points:10},{text:"Baywatch",points:5},{text:"X-Files",points:5}]},{question:"Name an accessory from the 80s you wouldn't wear now.",answers:[{text:"Leg Warmers",points:30},{text:"Big Hair / Perm",points:25},{text:"Shoulder Pads",points:15},{text:"Neon Clothes",points:10},{text:"Fanny Pack",points:10},{text:"Parachute Pants",points:10}]},{question:"Name a type of old video game console.",answers:[{text:"Nintendo (NES)",points:40},{text:"Sega Genesis",points:20},{text:"Atari",points:15},{text:"PlayStation 1 (PSX)",points:10},{text:"Super Nintendo (SNES)",points:10},{text:"Game Boy",points:5}]},{question:"Name a celebrity from the 80s or 90s.",answers:[{text:"Madonna",points:30},{text:"Michael Jackson",points:25},{text:"Tom Cruise",points:15},{text:"Will Smith",points:10},{text:"Julia Roberts",points:10},{text:"Arnold Schwarzenegger",points:10}]},{question:"Name a popular 90s boy band.",answers:[{text:"Backstreet Boys",points:40},{text:"*NSYNC",points:25},{text:"New Kids on the Block",points:15},{text:"Boyz II Men",points:10},{text:"98 Degrees",points:5},{text:"Take That",points:5}]},{question:"Name something you used to listen to music before MP3s.",answers:[{text:"Cassette Tape",points:40},{text:"CD (Compact Disc)",points:30},{text:"Vinyl / Record",points:15},{text:"Walkman",points:10},{text:"Boombox",points:5},{text:"MiniDisc",points:0}]},{question:"Name a breakfast cereal popular in the 90s.",answers:[{text:"Fruity Pebbles",points:35},{text:"Frosted Flakes",points:20},{text:"Cinnamon Toast Crunch",points:15},{text:"Lucky Charms",points:10},{text:"Waffle Crisp",points:10},{text:"Trix",points:5}]},{question:"Name a brand of classic running shoe.",answers:[{text:"Nike",points:35},{text:"Adidas",points:25},{text:"Reebok",points:15},{text:"New Balance",points:10},{text:"Puma",points:10},{text:"ASICS",points:5}]},{question:"Name a toy popular in the 90s.",answers:[{text:"Tamagotchi",points:30},{text:"Beanie Babies",points:25},{text:"Pogs",points:15},{text:"Furbies",points:10},{text:"Tickle Me Elmo",points:10},{text:"Yo-yo",points:10}]}]}, 'TRAVEL':{displayName:"Travel & Destinations",questions:[{question:"Name something people often forget to pack for vacation.",answers:[{text:"Toothbrush",points:35},{text:"Phone Charger",points:25},{text:"Sunscreen",points:15},{text:"Passport/ID",points:10},{text:"Underwear/Socks",points:8},{text:"Swimsuit",points:7}]},{question:"Name a reason a flight might be delayed.",answers:[{text:"Weather",points:40},{text:"Mechanical Issue",points:25},{text:"Late Crew",points:15},{text:"Air Traffic Control",points:10},{text:"Security",points:5},{text:"Late Arriving Aircraft",points:5}]},{question:"Name a country famous for its food.",answers:[{text:"Italy",points:35},{text:"France",points:20},{text:"Mexico",points:15},{text:"Japan",points:10},{text:"India",points:10},{text:"Thailand",points:10}]},{question:"Name something you might buy at an airport gift shop.",answers:[{text:"Snacks/Candy",points:30},{text:"Magazine/Book",points:25},{text:"Souvenir T-Shirt",points:15},{text:"Neck Pillow",points:10},{text:"Water Bottle",points:10},{text:"Keychain",points:10}]},{question:"Name a popular honeymoon destination.",answers:[{text:"Hawaii",points:30},{text:"Italy",points:20},{text:"Mexico (Cancun)",points:15},{text:"Paris",points:10},{text:"Maldives",points:10},{text:"Caribbean Cruise",points:15}]},{question:"Name a common complaint about hotel rooms.",answers:[{text:"Not Clean",points:35},{text:"Noisy Neighbors",points:20},{text:"Uncomfortable Bed",points:15},{text:"Bad View",points:10},{text:"Weak Wi-Fi",points:10},{text:"Too Small",points:10}]},{question:"Besides a plane, name a way to travel long distances.",answers:[{text:"Car/Automobile",points:40},{text:"Train",points:25},{text:"Bus",points:15},{text:"Ship/Cruise",points:10},{text:"RV/Camper",points:5},{text:"Motorcycle",points:5}]},{question:"Name something you need to get through airport security.",answers:[{text:"ID/Passport",points:35},{text:"Boarding Pass",points:30},{text:"Laptop (out of bag)",points:15},{text:"Shoes (off)",points:10},{text:"Belt (off)",points:5},{text:"Liquids (in a bag)",points:5}]},{question:"Name a type of luggage.",answers:[{text:"Suitcase/Roller Bag",points:40},{text:"Backpack",points:20},{text:"Duffel Bag",points:15},{text:"Carry-on",points:10},{text:"Garment Bag",points:10},{text:"Trunk",points:5}]}]}, 'FINANCE':{displayName:"Money & Finance",questions:[{question:"Name a common monthly bill.",answers:[{text:"Rent/Mortgage",points:35},{text:"Utilities (Elec/Gas)",points:20},{text:"Phone Bill",points:15},{text:"Car Payment",points:10},{text:"Internet/Cable",points:10},{text:"Insurance",points:10}]},{question:"Name something people save up money to buy.",answers:[{text:"A House",points:40},{text:"A Car",points:25},{text:"Vacation",points:15},{text:"College/Education",points:10},{text:"Retirement",points:5},{text:"A Wedding",points:5}]},{question:"Name a reason to apply for a loan.",answers:[{text:"Buy a House (Mortgage)",points:35},{text:"Buy a Car",points:25},{text:"School/Student Loan",points:15},{text:"Start a Business",points:10},{text:"Home Renovations",points:10},{text:"Consolidate Debt",points:5}]},{question:"Name a type of insurance people have.",answers:[{text:"Health Insurance",points:30},{text:"Car/Auto Insurance",points:25},{text:"Life Insurance",points:15},{text:"Homeowner's/Renter's",points:10},{text:"Dental Insurance",points:10},{text:"Disability Insurance",points:10}]},{question:"Name a way people invest their money.",answers:[{text:"Stocks/Stock Market",points:40},{text:"Real Estate",points:20},{text:"401k/Retirement Plan",points:15},{text:"Mutual Funds",points:10},{text:"Bonds",points:10},{text:"Savings Account",points:5}]},{question:"Name something that can hurt your credit score.",answers:[{text:"Late Payments",points:40},{text:"High Credit Card Debt",points:25},{text:"Defaulting on a Loan",points:10},{text:"Too Many Credit Inquiries",points:10},{text:"Bankruptcy",points:10},{text:"Closing Old Accounts",points:5}]},{question:"Name a well-known credit card company.",answers:[{text:"Visa",points:35},{text:"MasterCard",points:25},{text:"American Express",points:20},{text:"Discover",points:10},{text:"Capital One",points:5},{text:"Chase",points:5}]},{question:"Name something people cut back on to save money.",answers:[{text:"Eating Out/Restaurants",points:40},{text:"Entertainment/Movies",points:20},{text:"Vacations",points:15},{text:"Coffee",points:10},{text:"Shopping/New Clothes",points:10},{text:"Cable TV",points:5}]},{question:"Name a type of tax people pay.",answers:[{text:"Income Tax",points:35},{text:"Sales Tax",points:25},{text:"Property Tax",points:20},{text:"Capital Gains Tax",points:10},{text:"Gas Tax",points:5},{text:"Inheritance Tax",points:5}]}]}, 'POP_CULTURE':{displayName:"Pop Culture",questions:[{question:"Name a famous reality TV show competition.",answers:[{text:"Survivor",points:30},{text:"American Idol",points:25},{text:"The Amazing Race",points:15},{text:"The Bachelor",points:10},{text:"Big Brother",points:10},{text:"Dancing with the Stars",points:10}]},{question:"Name a director famous for a certain style of movie.",answers:[{text:"Quentin Tarantino",points:25},{text:"Steven Spielberg",points:20},{text:"Alfred Hitchcock",points:15},{text:"Tim Burton",points:15},{text:"Wes Anderson",points:15},{text:"Michael Bay",points:10}]},{question:"Name a host of a late-night talk show.",answers:[{text:"Johnny Carson",points:35},{text:"David Letterman",points:20},{text:"Jay Leno",points:15},{text:"Stephen Colbert",points:10},{text:"Jimmy Fallon",points:10},{text:"Jimmy Kimmel",points:10}]},{question:"Name an awards show for movies or TV.",answers:[{text:"The Oscars",points:40},{text:"The Emmys",points:20},{text:"The Golden Globes",points:15},{text:"The Grammys (Music)",points:10},{text:"The BAFTAs",points:10},{text:"Screen Actors Guild (SAG)",points:5}]},{question:"Name a streaming service.",answers:[{text:"Netflix",points:40},{text:"Hulu",points:20},{text:"Disney+",points:15},{text:"Amazon Prime Video",points:10},{text:"HBO Max/Max",points:10},{text:"YouTube",points:5}]},{question:"Name a character from 'The Office' (US).",answers:[{text:"Michael Scott",points:35},{text:"Dwight Schrute",points:25},{text:"Jim Halpert",points:15},{text:"Pam Beesly",points:10},{text:"Kevin Malone",points:10},{text:"Andy Bernard",points:5}]},{question:"Name a famous superhero movie franchise.",answers:[{text:"Marvel (MCU)",points:35},{text:"Batman/Dark Knight",points:25},{text:"Spider-Man",points:15},{text:"Superman",points:10},{text:"X-Men",points:10},{text:"Avengers",points:5}]},{question:"Name a band with more than 20 years of hits.",answers:[{text:"The Rolling Stones",points:30},{text:"U2",points:20},{text:"Metallica",points:15},{text:"Red Hot Chili Peppers",points:15},{text:"Aerosmith",points:10},{text:"Queen",points:10}]},{question:"Name a famous music festival.",answers:[{text:"Coachella",points:35},{text:"Lollaplooza",points:20},{text:"Woodstock",points:15},{text:"Glastonbury",points:10},{text:"Bonnaroo",points:10},{text:"Tomorrowland",points:10}]}]} } };
+    const FAST_MONEY_DATA = [ { question: "Name a reason you might be late for work.", answers: { "Traffic": 52, "Overslept": 21, "Car Trouble": 10, "Kids": 7, "Weather": 4 } }, { question: "Name something you might find in a vending machine.", answers: { "Chips": 40, "Soda/Pop": 28, "Candy Bar": 18, "Cookies": 6, "Pretzels": 4 } }, { question: "Name a type of bear.", answers: { "Grizzly": 35, "Polar": 30, "Black": 22, "Panda": 8, "Koala": 3 } }, { question: "Name something that has a shell.", answers: { "Turtle": 41, "Snail": 25, "Egg": 14, "Crab/Lobster": 11, "Nut": 6 } }, { question: "Name an occupation that requires you to wear a uniform.", answers: { "Police Officer": 38, "Firefighter": 20, "Doctor/Nurse": 16, "Military": 12, "Pilot": 7 } }, ];
+    
+    // --- State Management
+    let userRole = null;
+    let gameCode = '';
+    // --- MODIFIED -- Added faceOff.status to track the new, multi-step face-off process
+    const initialGameState = { round: 0, strikes: 0, roundPoints: 0, team1Score: 0, team2Score: 0, team1Name: 'TEAM 1', team2Name: 'TEAM 2', currentTopicType: 'KID_FRIENDLY', currentTopicKey: '', isQuestionDisplayed: false, revealed: {}, buzzer: { active: false, name: '', team: '' }, faceOff: { status: 'none', firstPlayerTeam: null }, faceOffWinner: null, controllingTeam: null, stealOpportunity: null, gameOver: false, players: {}, fastMoney: { isActive: false, player: 1, answers1: {}, answers2: {}, totalScore: 0 } };
+    let gameState = JSON.parse(JSON.stringify(initialGameState));
+
+    function playSound(id) {
+        const sound = document.getElementById(id);
+        if (sound && sound.src) {
+            sound.currentTime = 0;
+            sound.play().catch(e => console.warn(`Could not play sound: ${e.message}`));
+        }
+    }
+
+    // -- MODIFIED -- This function now adds a class to the body for CSS targeting
+    function switchScreen(screenId) {
+        // Add a class to the body to lock the viewport ONLY when the player screen is active
+        document.body.classList.toggle('player-view-active', screenId === 'player-screen');
+        
+        document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+        document.getElementById(screenId).classList.add('active');
+    }
+
+    function getCurrentQuestionSet(state) {
+        if (!state.currentTopicType || !state.currentTopicKey) return [];
+        const topic = TOPIC_DATA[state.currentTopicType]?.[state.currentTopicKey];
+        return topic ? topic.questions : [];
+    }
+    function updateTeamSelectOptions(name1, name2) {
+        document.getElementById('team1-option').textContent = name1;
+        document.getElementById('team2-option').textContent = name2;
+    }
+
+    function updatePlayerLists(state, prefix) {
+        const team1ListEl = document.getElementById(`${prefix}team1-players-list`);
+        const team2ListEl = document.getElementById(`${prefix}team2-players-list`);
+        const team1ListTitle = document.getElementById(`${prefix}team1-list-title`);
+        const team2ListTitle = document.getElementById(`${prefix}team2-list-title`);
+
+        if (!team1ListEl || !team2ListEl) return;
+
+        team1ListTitle.textContent = `${state.team1Name} Players`;
+        team2ListTitle.textContent = `${state.team2Name} Players`;
+        
+        team1ListEl.innerHTML = '';
+        team2ListEl.innerHTML = '';
+
+        if (state.players) {
+            Object.values(state.players).forEach(player => {
+                const li = document.createElement('li');
+                li.textContent = player.name;
+                if (player.team === '1') {
+                    team1ListEl.appendChild(li);
+                } else if (player.team === '2') {
+                    team2ListEl.appendChild(li);
+                }
+            });
+        }
+
+        if (team1ListEl.children.length === 0) team1ListEl.innerHTML = '<li>No players yet</li>';
+        if (team2ListEl.children.length === 0) team2ListEl.innerHTML = '<li>No players yet</li>';
+    }
+    
+    function updateBoard(state, isGMView, prefix) {
+        const topicInfoEl = document.getElementById(`${prefix}topic-info`);
+        if (topicInfoEl) {
+            const topicDisplayName = TOPIC_DATA[state.currentTopicType]?.[state.currentTopicKey]?.displayName || "No Topic Loaded";
+            topicInfoEl.textContent = state.currentTopicKey ? `Topic: ${topicDisplayName}` : "Waiting for GM to load a topic...";
+        }
+
+        const questionSet = getCurrentQuestionSet(state);
+        const q = questionSet[state.round] || { question: "GAME OVER!", answers: [] };
+        const bannerEl = document.getElementById(`${prefix}points-banner`);
+        let multiplier = 1;
+        if (state.round === 3) { multiplier = 2; bannerEl.textContent = "DOUBLE POINTS"; }
+        else if (state.round >= 4) { multiplier = 3; bannerEl.textContent = "TRIPLE POINTS"; }
+        else { bannerEl.textContent = ""; }
+
+        document.getElementById(`${prefix}team1-title`).innerHTML = `${state.team1Name}: <span>${state.team1Score}</span>`;
+        document.getElementById(`${prefix}team2-title`).innerHTML = `${state.team2Name}: <span>${state.team2Score}</span>`;
+        document.getElementById(`${prefix}team1-title`).classList.toggle('active-turn', state.controllingTeam === 'team1');
+        document.getElementById(`${prefix}team2-title`).classList.toggle('active-turn', state.controllingTeam === 'team2');
+        document.getElementById(`${prefix}round-points-view`).textContent = state.roundPoints;
+        
+        const questionDisplayEl = document.getElementById(`${prefix}board-question-display`);
+        if (isGMView) {
+            questionDisplayEl.textContent = q.question;
+            questionDisplayEl.classList.toggle('clickable-to-reveal', !state.isQuestionDisplayed);
+            questionDisplayEl.title = !state.isQuestionDisplayed ? "Click to reveal on Cast Screen" : "Question is live";
+        } else { 
+            questionDisplayEl.textContent = state.isQuestionDisplayed ? q.question : "Waiting for GM to reveal the question...";
+        }
+
+        const buzzerDisplay = document.getElementById(`${prefix}buzzer-display`);
+        if (state.buzzer && state.buzzer.active) {
+            const teamName = state.buzzer.team === '1' ? state.team1Name : state.team2Name;
+            buzzerDisplay.classList.remove('neutral');
+            buzzerDisplay.classList.add('active');
+            buzzerDisplay.innerHTML = `<span class="buzzer-name">${state.buzzer.name.toUpperCase()}</span><span>(${teamName})</span>`;
+        } else {
+            buzzerDisplay.classList.remove('active');
+            buzzerDisplay.classList.add('neutral');
+            buzzerDisplay.textContent = 'Ready';
+        }
+
+        for (let i = 0; i < 3; i++) {
+            const strikeEl = document.querySelector(`#${prefix}strikes-display .strike:nth-child(${i + 1})`);
+            if(strikeEl) strikeEl.classList.toggle('active', i < state.strikes);
+        }
+
+        const boardEl = document.getElementById(`${prefix}board-answers`);
+        boardEl.innerHTML = '';
+        (q.answers || []).forEach((answer, i) => {
+            const answerBox = document.createElement('div');
+            answerBox.classList.add('answer-box');
+            if (isGMView) answerBox.classList.add('gm-mode');
+            
+            const isClickedAndRevealed = state.revealed && state.revealed[i] === true;
+
+            if (isClickedAndRevealed || isGMView) {
+                answerBox.classList.add('revealed'); 
+            }
+
+            if (isGMView && isClickedAndRevealed) {
+                answerBox.classList.add('clicked');
+            }
+
+            if (isGMView) {
+                answerBox.onclick = () => revealAnswer(i, answer.points);
+            }
+            
+            answerBox.innerHTML = `
+                <div class="answer-flipper">
+                    <div class="answer-front"><span class="answer-rank">${i + 1}.</span></div>
+                    <div class="answer-back">
+                        <span class="answer-text">${answer.text.toUpperCase()}</span>
+                        <span class="answer-points">${answer.points * multiplier}</span>
+                    </div>
+                </div>`;
+            boardEl.appendChild(answerBox);
+        });
+    }
+
+    function updateGMControls(state) {
+        document.getElementById('gm-round-num').textContent = state.round + 1;
+        const controllingTeamName = state.controllingTeam === 'team1' ? state.team1Name : (state.controllingTeam === 'team2' ? state.team2Name : 'None');
+        document.getElementById('gm-controlling-team').textContent = controllingTeamName;
+        
+        const faceoffControls = document.getElementById('gm-faceoff-controls');
+        const secondPlayerControls = document.getElementById('faceoff-second-player-controls');
+        const playPassButtons = document.getElementById('play-pass-buttons');
+        const stealButtons = document.getElementById('steal-buttons');
+        const statusText = document.getElementById('faceoff-status-text');
+
+        // Hide all by default
+        faceoffControls.classList.add('hidden');
+        secondPlayerControls.classList.add('hidden');
+        playPassButtons.classList.add('hidden');
+        stealButtons.classList.add('hidden');
+
+        if (state.faceOff && state.faceOff.status === 'secondPlayerChance') {
+            faceoffControls.classList.remove('hidden');
+            secondPlayerControls.classList.remove('hidden');
+            const buzzingTeamName = state.faceOff.firstPlayerTeam === 'team1' ? state.team1Name : state.team2Name;
+            const otherTeamName = state.faceOff.firstPlayerTeam === 'team1' ? state.team2Name : state.team1Name;
+            statusText.textContent = `${buzzingTeamName} answered. Now ${otherTeamName}'s turn to give a higher answer.`;
+        } else if (state.faceOffWinner && !state.controllingTeam) {
+            faceoffControls.classList.remove('hidden');
+            playPassButtons.classList.remove('hidden');
+            const winnerName = state.faceOffWinner === 'team1' ? state.team1Name : state.team2Name;
+            statusText.textContent = `${winnerName} won face-off. Play or Pass.`;
+        } else if (state.stealOpportunity) {
+            faceoffControls.classList.remove('hidden');
+            stealButtons.classList.remove('hidden');
+            const stealerName = state.stealOpportunity === 'team1' ? state.team1Name : state.team2Name;
+            statusText.textContent = `${stealerName} can STEAL!`;
+        }
+
+        const endGameControls = document.getElementById('gm-end-game-controls');
+        if(state.gameOver && !state.fastMoney.isActive) {
+            endGameControls.classList.remove('hidden');
+            const winner = state.team1Score > state.team2Score ? state.team1Name : state.team2Name;
+            document.getElementById('final-winner-text').textContent = `${winner} wins the game!`;
+        } else {
+            endGameControls.classList.add('hidden');
+        }
+    }
+
+    function updateDatabase(updates) { if (gameRef) update(gameRef, updates).catch(e => console.error("Update failed:", e)); }
+    function handleTeamNameChange(e) { const key = `team${e.target.dataset.team}Name`; updateDatabase({ [key]: e.target.value.toUpperCase().trim() || `TEAM ${e.target.dataset.team}` }); }
+
+    function setGameTopic() {
+        const type = document.getElementById('topic-type-select').value;
+        const key = document.getElementById('topic-name-select').value;
+        if (!key) { alert("Please select a topic."); return; }
+        
+        let newState = JSON.parse(JSON.stringify(initialGameState));
+        newState.currentTopicType = type;
+        newState.currentTopicKey = key;
+        newState.team1Name = gameState.team1Name; 
+        newState.team2Name = gameState.team2Name;
+        newState.team1Score = gameState.team1Score;
+        newState.team2Score = gameState.team2Score;
+        newState.players = gameState.players || {}; 
+        set(gameRef, newState);
+    }
+
+    async function revealAnswer(index, points) {
+        const currentState = (await get(gameRef)).val();
+        if (!currentState || (currentState.revealed && currentState.revealed[index])) return;
+        playSound('sound-correct');
+        const updates = {};
+        let multiplier = 1;
+        if (currentState.round === 3) multiplier = 2;
+        if (currentState.round >= 4) multiplier = 3;
+        
+        updates[`revealed/${index}`] = true;
+        updates['roundPoints'] = currentState.roundPoints + (points * multiplier);
+        
+        // --- NEW Face-off Logic ---
+        if (Object.keys(currentState.revealed || {}).length === 0) {
+            updates['faceOff'] = { status: 'firstPlayerAnswered', firstPlayerTeam: `team${currentState.buzzer.team}` };
+            if (index === 0) { // If it's the #1 answer
+                updates['faceOffWinner'] = `team${currentState.buzzer.team}`;
+                updates['faceOff'].status = 'decision'; // Move straight to play/pass
+            } else {
+                updates['faceOff'].status = 'secondPlayerChance';
+            }
+        } else {
+             updates['buzzer'] = { active: false, name: '', team: '' };
+        }
+        updateDatabase(updates);
+    }
+
+    function handleSecondPlayerAnswer(isHigher) {
+        const firstPlayerTeam = gameState.faceOff.firstPlayerTeam;
+        const secondPlayerTeam = firstPlayerTeam === 'team1' ? 'team2' : 'team1';
+        const winner = isHigher ? secondPlayerTeam : firstPlayerTeam;
+        updateDatabase({
+            faceOffWinner: winner,
+            'faceOff/status': 'decision'
+        });
+    }
+
+    function setControllingTeam(play) {
+        const team = gameState.faceOffWinner;
+        const controlling = play ? team : (team === 'team1' ? 'team2' : 'team1');
+        updateDatabase({ 
+            controllingTeam: controlling, 
+            buzzer: { active: false, name: '', team: '' },
+            'faceOff/status': 'none' 
+        });
+    }
+
+    function addStrike() {
+        if (gameState.strikes < 3 && gameState.controllingTeam) {
+            playSound('sound-strike');
+            const newStrikes = gameState.strikes + 1;
+            const updates = { strikes: newStrikes };
+            if (newStrikes === 3) {
+                updates.stealOpportunity = (gameState.controllingTeam === 'team1') ? 'team2' : 'team1';
+            }
+            updateDatabase(updates);
+        }
+    }
+
+    function handleSteal(success) {
+        const awardTo = success ? gameState.stealOpportunity : gameState.controllingTeam;
+        const scoreKey = `team${awardTo.slice(-1)}Score`;
+        const currentScore = awardTo === 'team1' ? gameState.team1Score : gameState.team2Score;
+        const finalState = { ...gameState, [scoreKey]: currentScore + gameState.roundPoints };
+        loadNextQuestion(true, finalState);
+    }
+    
+    function awardPointsToControllingTeam() {
+        if (!gameState.controllingTeam) return;
+        const teamNum = gameState.controllingTeam.slice(-1);
+        const scoreKey = `team${teamNum}Score`;
+        const newScore = (teamNum === '1' ? gameState.team1Score : gameState.team2Score) + gameState.roundPoints;
+        const finalState = { ...gameState, [scoreKey]: newScore };
+        loadNextQuestion(true, finalState);
+    }
+    
+    function loadNextQuestion(fullReset = false, stateToCarryOver = gameState) {
+        const maxRounds = 5;
+        let nextRound = stateToCarryOver.round + 1;
+        if (nextRound >= maxRounds) {
+            updateDatabase({ gameOver: true });
+            return;
+        }
+        
+        const newState = { 
+            ...stateToCarryOver,
+            round: nextRound,
+            strikes: 0,
+            roundPoints: 0,
+            isQuestionDisplayed: false, 
+            revealed: {},
+            buzzer: { active: false, name: '', team: '' },
+            faceOff: { status: 'none', firstPlayerTeam: null },
+            faceOffWinner: null,
+            controllingTeam: null,
+            stealOpportunity: null,
+            gameOver: false
+        };
+        set(gameRef, newState);
+    }
+    
+    function startFastMoney() { switchScreen('fast-money-screen'); updateDatabase({ gameOver: true, fastMoney: { isActive: true, player: 1, answers1: {}, answers2: {}, totalScore: 0 } }); }
+
+    function renderFastMoneyBoard(state) {
+        if (userRole !== 'gm' && !state.fastMoney.isActive) { switchScreen('game-board-screen'); return; }
+        const fmBoard = document.getElementById('fm-board');
+        const fmControls = document.getElementById('gm-fm-controls');
+        fmBoard.innerHTML = '';
+        document.getElementById('fm-player-indicator').textContent = `Player ${state.fastMoney.player}`;
+        document.getElementById('fm-total-score').textContent = state.fastMoney.totalScore;
+
+        FAST_MONEY_DATA.forEach((q, i) => {
+            const ans1 = state.fastMoney.answers1[i] || { answer: '', score: '' };
+            const ans2 = state.fastMoney.answers2[i] || { answer: '', score: '' };
+            const isP2Viewing = state.fastMoney.player === 2 && userRole !== 'gm';
+            const row = document.createElement('div');
+            row.classList.add('fm-question-grid');
+            
+            if (userRole === 'gm') {
+                row.innerHTML = `
+                <div class="fm-question-text">${q.question}</div>
+                <input type="text" class="fm-player-answer" id="fm-ans-1-${i}" value="${ans1.answer}" placeholder="P1 Ans">
+                <input type="number" class="fm-player-score" id="fm-score-1-${i}" value="${ans1.score}" placeholder="P1 Pts">
+                <input type="text" class="fm-player-answer" id="fm-ans-2-${i}" value="${ans2.answer}" placeholder="P2 Ans">
+                <input type="number" class="fm-player-score" id="fm-score-2-${i}" value="${ans2.score}" placeholder="P2 Pts">`;
+            } else {
+                row.innerHTML = `
+                <div class="fm-question-text">${q.question}</div>
+                <div class="fm-player-answer">${isP2Viewing ? '???' : ans1.answer}</div>
+                <div class="fm-player-score">${isP2Viewing ? '???' : ans1.score}</div>
+                <div class="fm-player-answer">${ans2.answer}</div>
+                <div class="fm-player-score">${ans2.score}</div>`;
+            }
+            fmBoard.appendChild(row);
+        });
+        fmControls.style.display = (userRole === 'gm') ? 'block' : 'none';
+    }
+
+    let fmTimerInterval = null;
+    function startFMTimer(seconds, playerNum) {
+        let remaining = seconds;
+        const timerEl = document.getElementById('fm-timer');
+        clearInterval(fmTimerInterval);
+        fmTimerInterval = setInterval(() => {
+            timerEl.textContent = remaining.toString().padStart(2, '0');
+            playSound('sound-fm-tick');
+            if (remaining <= 0) {
+                clearInterval(fmTimerInterval);
+                playSound('sound-fm-timeout');
+                if (userRole === 'gm') saveFMAnswers(playerNum);
+            }
+            remaining--;
+        }, 1000);
+    }
+    
+    function saveFMAnswers(playerNum) {
+        const updates = {};
+        for(let i=0; i<5; i++) {
+            const answer = document.getElementById(`fm-ans-${playerNum}-${i}`).value;
+            const score = parseInt(document.getElementById(`fm-score-${playerNum}-${i}`).value) || 0;
+            updates[`fastMoney/answers${playerNum}/${i}`] = { answer, score };
+        }
+        if(playerNum === 1) updates['fastMoney/player'] = 2;
+        updateDatabase(updates);
+    }
+
+    function revealFMScores() {
+        let totalScore = 0;
+        const p1ans = [];
+        for(let i=0; i<5; i++) {
+            totalScore += parseInt(document.getElementById(`fm-score-1-${i}`).value) || 0;
+            p1ans.push(document.getElementById(`fm-ans-1-${i}`).value.trim().toLowerCase());
+        }
+        for(let i=0; i<5; i++) {
+            const p2ansEl = document.getElementById(`fm-ans-2-${i}`);
+            if(p1ans.includes(p2ansEl.value.trim().toLowerCase()) && p2ansEl.value.trim() !== "") {
+                p2ansEl.style.backgroundColor = "red";
+                alert(`Duplicate answer detected for question ${i+1}! Player must answer again.`);
+                return;
+            }
+            p2ansEl.style.backgroundColor = "";
+            totalScore += parseInt(document.getElementById(`fm-score-2-${i}`).value) || 0;
+        }
+        document.getElementById('fm-win-message').classList.toggle('hidden', totalScore < 200);
+        updateDatabase({ 'fastMoney/totalScore': totalScore });
+    }
+
+    function endGameAndReset() { set(gameRef, null).then(() => location.reload()); }
+    
+    document.addEventListener('DOMContentLoaded', () => {
+        let listenerAttached = false;
+        const codeInput = document.getElementById('game-code-input');
+        const errorMsg = document.getElementById('join-error-message');
+
+        function populateTopicNames() {
+            const type = document.getElementById('topic-type-select').value;
+            const nameSelect = document.getElementById('topic-name-select');
+            nameSelect.innerHTML = '<option value="">-- Select Topic --</option>';
+            for (const [key, topic] of Object.entries(TOPIC_DATA[type] || {})) {
+                const opt = document.createElement('option');
+                opt.value = key;
+                opt.textContent = `${topic.displayName}`;
+                nameSelect.appendChild(opt);
+            }
+        }
+
+        function listenForUpdates() {
+            if (listenerAttached) return;
+            listenerAttached = true;
+            onValue(gameRef, (snapshot) => {
+                const newState = snapshot.val();
+                if (!newState) { if(userRole !== 'gm') location.reload(); return; }
+                gameState = newState;
+                
+                if (newState.fastMoney && newState.fastMoney.isActive) {
+                    if(!document.getElementById('fast-money-screen').classList.contains('active')) switchScreen('fast-money-screen');
+                    renderFastMoneyBoard(newState);
+                    return;
+                }
+                if (userRole === 'gm') {
+                    if(!document.getElementById('gm-screen').classList.contains('active')) switchScreen('gm-screen');
+                    updateGMControls(newState);
+                    updateBoard(newState, true, 'gm-');
+                    updatePlayerLists(newState, 'gm-');
+                } else if (userRole === 'cast') {
+                    if(!document.getElementById('game-board-screen').classList.contains('active')) switchScreen('game-board-screen');
+                    updateBoard(newState, false, 'cast-');
+                    updatePlayerLists(newState, 'cast-');
+                } else if (userRole === 'player') {
+                    if(!document.getElementById('player-screen').classList.contains('active')) switchScreen('player-screen');
+                    updateTeamSelectOptions(newState.team1Name, newState.team2Name);
+                    const buzzerBtn = document.getElementById('buzzer-btn');
+                    const buzzerMessage = document.getElementById('buzzer-message');
+                    const playerName = localStorage.getItem('playerName');
+
+                    if (newState.buzzer && newState.buzzer.active) {
+                        buzzerBtn.disabled = true;
+                        if (newState.buzzer.name === playerName) {
+                            buzzerBtn.classList.add('buzzed-in');
+                            buzzerMessage.textContent = "You buzzed in!";
+                        } else {
+                            buzzerBtn.classList.remove('buzzed-in');
+                            buzzerMessage.textContent = `${newState.buzzer.name} buzzed in first!`;
+                        }
+                    } else {
+                        buzzerBtn.disabled = false;
+                        buzzerBtn.classList.remove('buzzed-in');
+                        buzzerMessage.textContent = "";
+                    }
+                }
+            });
+        }
+
+        const joinGame = (role) => {
+            gameCode = codeInput.value.toUpperCase().trim();
+            if (gameCode.length < 5) { errorMsg.textContent = "Please enter a valid Game Code."; return; }
+            userRole = role;
+            gameRef = ref(database, 'games/' + gameCode);
+            get(gameRef).then((snapshot) => {
+                if (snapshot.exists()) {
+                    if (role === 'player') { 
+                        switchScreen('player-screen'); 
+                        document.getElementById('player-game-code').textContent = gameCode; 
+                        
+                        const storedName = localStorage.getItem('playerName');
+                        if (storedName) {
+                            document.querySelector('#player-screen h2').textContent = storedName;
+                            document.getElementById('player-registration').style.display = 'none';
+                            document.getElementById('player-buzzer-area').classList.remove('hidden');
+                            document.getElementById('forget-player-btn').classList.remove('hidden');
+                        }
+                    } 
+                    else if (role === 'cast') { switchScreen('game-board-screen'); }
+                    listenForUpdates();
+                } else { errorMsg.textContent = "Game code not found."; }
+            });
+        };
+
+        document.getElementById('btn-create-gm').addEventListener('click', () => {
+            gameCode = Math.random().toString(36).substring(2, 10).toUpperCase();
+            userRole = 'gm';
+            gameRef = ref(database, 'games/' + gameCode);
+            set(gameRef, initialGameState).then(() => {
+                switchScreen('gm-screen');
+                document.getElementById('gm-game-code').textContent = gameCode;
+                populateTopicNames();
+                listenForUpdates();
+            }).catch(e => {
+                console.error("Firebase set failed:", e);
+                errorMsg.textContent = "Error creating game: " + e.message;
+            });
+        });
+
+        document.getElementById('btn-join-player').addEventListener('click', () => joinGame('player'));
+        document.getElementById('btn-join-cast').addEventListener('click', () => joinGame('cast'));
+        document.getElementById('player-register-btn').addEventListener('click', () => {
+            const name = document.getElementById('player-name-input').value.trim();
+            const team = document.getElementById('player-team-select').value;
+            if (name) {
+                localStorage.setItem('playerName', name);
+                localStorage.setItem('playerTeam', team);
+                
+                const playerRef = ref(database, `games/${gameCode}/players`);
+                push(playerRef, { name, team });
+
+                document.querySelector('#player-screen h2').textContent = name;
+                document.getElementById('player-registration').style.display = 'none';
+                document.getElementById('player-buzzer-area').classList.remove('hidden');
+                document.getElementById('forget-player-btn').classList.remove('hidden');
+            }
+        });
+        document.getElementById('forget-player-btn').addEventListener('click', () => {
+            localStorage.removeItem('playerName');
+            localStorage.removeItem('playerTeam');
+            location.reload();
+        });
+        document.getElementById('buzzer-btn').addEventListener('click', () => {
+            if (gameState.buzzer && gameState.buzzer.active) return;
+            playSound('sound-buzz-in');
+            updateDatabase({ buzzer: { active: true, name: localStorage.getItem('playerName'), team: localStorage.getItem('playerTeam') } });
+        });
+        document.getElementById('gm-board-question-display').addEventListener('click', () => {
+            if (userRole === 'gm' && !gameState.isQuestionDisplayed) {
+                updateDatabase({ isQuestionDisplayed: true });
+            }
+        });
+        document.getElementById('topic-type-select').addEventListener('change', populateTopicNames);
+        document.getElementById('gm-load-topic-btn').addEventListener('click', setGameTopic);
+        document.getElementById('team1-name-input').addEventListener('blur', handleTeamNameChange);
+        document.getElementById('team2-name-input').addEventListener('blur', handleTeamNameChange);
+        document.getElementById('gm-next-question').addEventListener('click', () => loadNextQuestion());
+        document.getElementById('gm-add-strike').addEventListener('click', addStrike);
+        document.getElementById('gm-play-btn').addEventListener('click', () => setControllingTeam(true));
+        document.getElementById('gm-pass-btn').addEventListener('click', () => setControllingTeam(false));
+        document.getElementById('gm-second-player-higher').addEventListener('click', () => handleSecondPlayerAnswer(true));
+        document.getElementById('gm-second-player-lower').addEventListener('click', () => handleSecondPlayerAnswer(false));
+        document.getElementById('gm-steal-success-btn').addEventListener('click', () => handleSteal(true));
+        document.getElementById('gm-steal-fail-btn').addEventListener('click', () => handleSteal(false));
+        document.getElementById('gm-award-points-btn').addEventListener('click', awardPointsToControllingTeam);
+        document.getElementById('gm-start-fm-btn').addEventListener('click', startFastMoney);
+        document.getElementById('gm-fm-start-player1').addEventListener('click', e => { startFMTimer(20, 1); e.target.disabled = true; document.getElementById('gm-fm-start-player2').disabled = false; });
+        document.getElementById('gm-fm-start-player2').addEventListener('click', e => { startFMTimer(25, 2); e.target.disabled = true; });
+        document.getElementById('gm-fm-reveal-scores').addEventListener('click', revealFMScores);
+        document.getElementById('gm-fm-end-game').addEventListener('click', endGameAndReset);
+        document.getElementById('gm-reset-buzz').addEventListener('click', () => updateDatabase({ buzzer: { active: false, name: '', team: '' }, faceOff: { status: 'none', firstPlayerTeam: null } }));
+        document.getElementById('gm-reveal-all').addEventListener('click', async () => {
+            const currentState = (await get(gameRef)).val();
+            if (!currentState) return;
+            const questionSet = getCurrentQuestionSet(currentState);
+            const q = questionSet[currentState.round];
+            if (!q) return;
+            let totalPointsAdded = 0;
+            const updates = {};
+            let multiplier = 1;
+            if (currentState.round === 3) multiplier = 2;
+            if (currentState.round >= 4) multiplier = 3;
+
+            q.answers.forEach((answer, i) => {
+                if (!currentState.revealed || !currentState.revealed[i]) {
+                    updates[`revealed/${i}`] = true;
+                    totalPointsAdded += (answer.points * multiplier);
+                }
+            });
+            if (totalPointsAdded > 0) {
+                updates['roundPoints'] = currentState.roundPoints + totalPointsAdded;
+                updateDatabase(updates);
+            }
+        });
+
+        switchScreen('join-screen');
+    });
+</script>
+
+</body>
+</html>
+
