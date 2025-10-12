@@ -1,10 +1,10 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <link rel="icon" type="image/png" href="icon-512x512.png.png">
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Family Feud Real-Time</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
     <style>
         /* Base Styling */
         body {
@@ -16,7 +16,7 @@
             margin: 0;
         }
 
-        /* -- NEW -- This class is added via JS to lock the viewport ONLY for the player screen */
+        /* -- This class is added via JS to lock the viewport ONLY for the player screen */
         body.player-view-active {
             overflow: hidden;
             padding: 0; /* Remove padding for a true full-screen experience on mobile */
@@ -30,6 +30,7 @@
             box-shadow: 0 10px 30px rgba(45, 55, 72, 0.2);
             padding: 30px;
             border: 5px solid #e53e3e;
+            position: relative; /* Needed for QR code positioning */
         }
 
         /* When in locked player view, make the container full-screen */
@@ -55,6 +56,11 @@
         .screen { display: none; padding: 20px 0; }
         .screen.active { display: block; }
         
+        #game-board-screen {
+            padding-top: 140px; /* Pushes content below the QR code banner */
+            position: relative;
+        }
+
         /* New rule to make player screen a centered flex container */
         #player-screen.active {
             display: flex;
@@ -233,6 +239,16 @@
         .buzzer-display-circle.active { background-color: #48bb78; animation: pulse 0.8s infinite alternate; box-shadow: 0 0 30px #48bb78; }
         .buzzer-name { font-size: 2.2em; font-weight: 900; line-height: 1; }
         @keyframes pulse { from { box-shadow: 0 0 10px #48bb78; } to { box-shadow: 0 0 30px #48bb78; } }
+        .buzzer-display-circle.timer-active {
+            background-color: #dd6b20;
+            font-size: 5em;
+            line-height: 1;
+        }
+        .buzzer-display-circle.timeout {
+            background-color: #e53e3e;
+            font-size: 5em;
+            line-height: 1;
+        }
 
         .strikes { display: flex; justify-content: center; gap: 20px; margin-bottom: 30px; }
         .strike { width: 50px; height: 50px; background-color: #a0aec0; border-radius: 50%; display: flex; justify-content: center; align-items: center; font-size: 2.2em; color: white; font-weight: bold; }
@@ -280,6 +296,40 @@
         .fm-player-answer { background: #4a5568; color: white; border: none; padding: 8px; border-radius: 5px; text-align: center; }
         .fm-player-score { font-weight: bold; }
         #fm-win-message { font-size: 3em; color: #f6ad55; text-shadow: 0 0 15px #f6ad55; animation: pulse-orange 1s infinite; }
+
+        /* Cast Screen Join Info */
+        #cast-join-info {
+            position: absolute;
+            top: 15px;
+            left: 15px;
+            right: 15px;
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            z-index: 10;
+        }
+        #cast-game-code-display {
+            background: rgba(255,255,255,0.9);
+            padding: 10px 15px;
+            border-radius: 8px;
+            font-size: 1.5em;
+            font-weight: bold;
+            color: #1a202c;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+        }
+        #qrcode {
+            background: white;
+            padding: 5px;
+            border-radius: 4px;
+            display: inline-block;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+        }
+        .in-round-timer-display { /* This class is no longer used but kept for safety */
+            font-size: 1.5em;
+            font-weight: bold;
+            color: #e53e3e;
+            animation: pulse-orange 0.5s infinite;
+        }
     </style>
 </head>
 <body>
@@ -322,9 +372,9 @@
         <div id="gm-faceoff-controls" class="gm-controls-group hidden">
             <h4>Face-Off / Steal Actions</h4>
             <p id="faceoff-status-text"></p>
-            <div id="faceoff-second-player-controls" class="hidden">
-                <button id="gm-second-player-higher" style="background-color: #48bb78; color: white;">Opponent's Answer is Higher</button>
-                <button id="gm-second-player-lower" style="background-color: #e53e3e; color: white;">Opponent's is Lower / Not on Board</button>
+            <div id="faceoff-winner-controls" class="hidden">
+                 <button id="gm-faceoff-winner-1" style="background-color: #48bb78; color: white;"></button>
+                 <button id="gm-faceoff-winner-2" style="background-color: #4299e1; color: white;"></button>
             </div>
             <div id="play-pass-buttons" class="hidden">
                 <button id="gm-play-btn" style="background-color: #48bb78; color: white;">Play</button>
@@ -341,6 +391,10 @@
             <p>Controlling Team: <strong id="gm-controlling-team">None</strong></p>
             <button id="gm-add-strike">Add Strike</button>
             <button id="gm-award-points-btn" style="background-color: #38b2ac; color: white;">Award Points to Controlling Team</button>
+            <div id="in-round-timer-controls" style="margin-top: 10px;">
+                <button id="gm-start-timer" style="background-color: #dd6b20; color: white;">Start 10s Timer</button>
+                <button id="gm-reset-timer" style="background-color: #a0aec0; color: white;">Reset Timer</button>
+            </div>
         </div>
 
         <div id="gm-end-game-controls" class="gm-controls-group hidden">
@@ -378,9 +432,9 @@
     </div>
     
     <div id="player-screen" class="screen">
-        <h2>Player Console</h2>
+        <h2 id="player-screen-title">Player Console</h2>
         <p>Game Code: <span id="player-game-code"></span></p>
-        <button id="forget-player-btn" class="hidden" style="background-color:#e53e3e; color:white; font-size: 0.8em; padding: 8px 15px;">Forget Me & Re-join</button>
+        <p id="player-team-name" style="font-weight: bold; color: #38b2ac;"></p>
         <div id="player-registration">
             <input type="text" id="player-name-input" placeholder="Your Name" required>
             <select id="player-team-select">
@@ -396,6 +450,10 @@
     </div>
 
     <div id="game-board-screen" class="screen">
+        <div id="cast-join-info">
+            <div id="cast-game-code-display"></div>
+            <div id="qrcode"></div>
+        </div>
         <p id="cast-topic-info" style="font-size: 1.2em; color: #718096;">Waiting for GM to load a topic...</p>
         <div id="cast-points-banner" class="points-banner"></div>
         <div id="cast-board-question-display" class="question-title"></div>
@@ -437,6 +495,7 @@
             <button id="gm-fm-start-player1">Start Player 1 (20s)</button>
             <button id="gm-fm-start-player2" disabled>Start Player 2 (25s)</button>
             <button id="gm-fm-reveal-scores">Reveal Final Scores</button>
+            <button id="gm-fm-new-game" style="background-color: #48bb78; color: white;">New Game (Keep Teams)</button>
             <button id="gm-fm-end-game" style="background-color: #e53e3e; color: white;">End Game & Reset</button>
         </div>
     </div>
@@ -451,7 +510,7 @@
 
 <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/9.6.1/firebase-app.js";
-    import { getDatabase, ref, onValue, set, update, get, push } from "https://www.gstatic.com/firebasejs/9.6.1/firebase-database.js";
+    import { getDatabase, ref, onValue, set, update, get, push, runTransaction } from "https://www.gstatic.com/firebasejs/9.6.1/firebase-database.js";
     
     const firebaseConfig = {
       apiKey: "AIzaSyCgYbPYeT8aALFtdd4mzSqdnOEODUi85SY",
@@ -483,9 +542,9 @@
     // --- State Management
     let userRole = null;
     let gameCode = '';
-    // --- MODIFIED -- Added faceOff.status to track the new, multi-step face-off process
-    const initialGameState = { round: 0, strikes: 0, roundPoints: 0, team1Score: 0, team2Score: 0, team1Name: 'TEAM 1', team2Name: 'TEAM 2', currentTopicType: 'KID_FRIENDLY', currentTopicKey: '', isQuestionDisplayed: false, revealed: {}, buzzer: { active: false, name: '', team: '' }, faceOff: { status: 'none', firstPlayerTeam: null }, faceOffWinner: null, controllingTeam: null, stealOpportunity: null, gameOver: false, players: {}, fastMoney: { isActive: false, player: 1, answers1: {}, answers2: {}, totalScore: 0 } };
+    const initialGameState = { round: 0, strikes: 0, roundPoints: 0, team1Score: 0, team2Score: 0, team1Name: 'TEAM 1', team2Name: 'TEAM 2', currentTopicType: 'KID_FRIENDLY', currentTopicKey: '', isQuestionDisplayed: false, revealed: {}, buzzer: { active: false, name: '', team: '' }, faceOff: { status: 'none', firstPlayerTeam: null }, faceOffWinner: null, controllingTeam: null, stealOpportunity: null, gameOver: false, players: {}, fastMoney: { isActive: false, player: 1, answers1: {}, answers2: {}, totalScore: 0, isRevealed: false }, inRoundTimer: { active: false, timeLeft: 10, timedOut: false } };
     let gameState = JSON.parse(JSON.stringify(initialGameState));
+    let inRoundTimerInterval = null;
 
     function playSound(id) {
         const sound = document.getElementById(id);
@@ -575,16 +634,22 @@
         }
 
         const buzzerDisplay = document.getElementById(`${prefix}buzzer-display`);
-        if (state.buzzer && state.buzzer.active) {
+
+        if (state.inRoundTimer && state.inRoundTimer.active) {
+            buzzerDisplay.textContent = state.inRoundTimer.timeLeft;
+            buzzerDisplay.className = 'buzzer-display-circle timer-active';
+        } else if (state.inRoundTimer && state.inRoundTimer.timedOut) {
+            buzzerDisplay.textContent = 'X';
+            buzzerDisplay.className = 'buzzer-display-circle timeout';
+        } else if (state.buzzer && state.buzzer.active) {
             const teamName = state.buzzer.team === '1' ? state.team1Name : state.team2Name;
-            buzzerDisplay.classList.remove('neutral');
-            buzzerDisplay.classList.add('active');
+            buzzerDisplay.className = 'buzzer-display-circle active';
             buzzerDisplay.innerHTML = `<span class="buzzer-name">${state.buzzer.name.toUpperCase()}</span><span>(${teamName})</span>`;
         } else {
-            buzzerDisplay.classList.remove('active');
-            buzzerDisplay.classList.add('neutral');
+            buzzerDisplay.className = 'buzzer-display-circle neutral';
             buzzerDisplay.textContent = 'Ready';
         }
+
 
         for (let i = 0; i < 3; i++) {
             const strikeEl = document.querySelector(`#${prefix}strikes-display .strike:nth-child(${i + 1})`);
@@ -630,23 +695,24 @@
         document.getElementById('gm-controlling-team').textContent = controllingTeamName;
         
         const faceoffControls = document.getElementById('gm-faceoff-controls');
-        const secondPlayerControls = document.getElementById('faceoff-second-player-controls');
+        const winnerControls = document.getElementById('faceoff-winner-controls');
         const playPassButtons = document.getElementById('play-pass-buttons');
         const stealButtons = document.getElementById('steal-buttons');
         const statusText = document.getElementById('faceoff-status-text');
 
         // Hide all by default
         faceoffControls.classList.add('hidden');
-        secondPlayerControls.classList.add('hidden');
+        winnerControls.classList.add('hidden');
         playPassButtons.classList.add('hidden');
         stealButtons.classList.add('hidden');
 
         if (state.faceOff && state.faceOff.status === 'secondPlayerChance') {
             faceoffControls.classList.remove('hidden');
-            secondPlayerControls.classList.remove('hidden');
-            const buzzingTeamName = state.faceOff.firstPlayerTeam === 'team1' ? state.team1Name : state.team2Name;
-            const otherTeamName = state.faceOff.firstPlayerTeam === 'team1' ? state.team2Name : state.team1Name;
-            statusText.textContent = `${buzzingTeamName} answered. Now ${otherTeamName}'s turn to give a higher answer.`;
+            winnerControls.classList.remove('hidden');
+            statusText.textContent = 'Who won the face-off?';
+            
+            document.getElementById('gm-faceoff-winner-1').textContent = state.team1Name;
+            document.getElementById('gm-faceoff-winner-2').textContent = state.team2Name;
         } else if (state.faceOffWinner && !state.controllingTeam) {
             faceoffControls.classList.remove('hidden');
             playPassButtons.classList.remove('hidden');
@@ -700,27 +766,18 @@
         updates[`revealed/${index}`] = true;
         updates['roundPoints'] = currentState.roundPoints + (points * multiplier);
         
-        // --- NEW Face-off Logic ---
+        // --- MODIFIED Face-off Logic ---
         if (Object.keys(currentState.revealed || {}).length === 0) {
-            updates['faceOff'] = { status: 'firstPlayerAnswered', firstPlayerTeam: `team${currentState.buzzer.team}` };
-            if (index === 0) { // If it's the #1 answer
-                updates['faceOffWinner'] = `team${currentState.buzzer.team}`;
-                updates['faceOff'].status = 'decision'; // Move straight to play/pass
-            } else {
-                updates['faceOff'].status = 'secondPlayerChance';
-            }
+            updates['faceOff'] = { status: 'secondPlayerChance', firstPlayerTeam: `team${currentState.buzzer.team}` };
         } else {
              updates['buzzer'] = { active: false, name: '', team: '' };
         }
         updateDatabase(updates);
     }
 
-    function handleSecondPlayerAnswer(isHigher) {
-        const firstPlayerTeam = gameState.faceOff.firstPlayerTeam;
-        const secondPlayerTeam = firstPlayerTeam === 'team1' ? 'team2' : 'team1';
-        const winner = isHigher ? secondPlayerTeam : firstPlayerTeam;
+    function setFaceoffWinner(winningTeam) {
         updateDatabase({
-            faceOffWinner: winner,
+            faceOffWinner: winningTeam,
             'faceOff/status': 'decision'
         });
     }
@@ -748,10 +805,19 @@
     }
 
     function handleSteal(success) {
-        const awardTo = success ? gameState.stealOpportunity : gameState.controllingTeam;
-        const scoreKey = `team${awardTo.slice(-1)}Score`;
-        const currentScore = awardTo === 'team1' ? gameState.team1Score : gameState.team2Score;
-        const finalState = { ...gameState, [scoreKey]: currentScore + gameState.roundPoints };
+        const teamToAward = success ? gameState.stealOpportunity : gameState.controllingTeam;
+
+        if (!teamToAward) {
+            console.error("handleSteal failed: Could not determine team to award points.", { success, controllingTeam: gameState.controllingTeam, stealOpportunity: gameState.stealOpportunity });
+            return; 
+        }
+
+        const teamNum = teamToAward.slice(-1);
+        const scoreKey = `team${teamNum}Score`;
+        const currentScore = (teamNum === '1') ? gameState.team1Score : gameState.team2Score;
+        const newScore = currentScore + gameState.roundPoints;
+
+        const finalState = { ...gameState, [scoreKey]: newScore };
         loadNextQuestion(true, finalState);
     }
     
@@ -789,10 +855,38 @@
         set(gameRef, newState);
     }
     
-    function startFastMoney() { switchScreen('fast-money-screen'); updateDatabase({ gameOver: true, fastMoney: { isActive: true, player: 1, answers1: {}, answers2: {}, totalScore: 0 } }); }
+    function startNewGameKeepTeams() {
+        let newState = JSON.parse(JSON.stringify(initialGameState));
+        newState.team1Name = gameState.team1Name;
+        newState.team2Name = gameState.team2Name;
+        newState.players = gameState.players;
+        newState.currentTopicKey = gameState.currentTopicKey;
+        newState.currentTopicType = gameState.currentTopicType;
+        set(gameRef, newState).then(() => {
+            switchScreen('gm-screen');
+        });
+    }
+
+    function startFastMoney() { 
+        switchScreen('fast-money-screen'); 
+        updateDatabase({ 
+            gameOver: true, 
+            fastMoney: { 
+                isActive: true, 
+                player: 1, 
+                answers1: {}, 
+                answers2: {}, 
+                totalScore: 0,
+                isRevealed: false 
+            } 
+        }); 
+    }
 
     function renderFastMoneyBoard(state) {
-        if (userRole !== 'gm' && !state.fastMoney.isActive) { switchScreen('game-board-screen'); return; }
+        if (!state.fastMoney.isActive) {
+             if (userRole !== 'gm') switchScreen('game-board-screen');
+             return;
+        }
         const fmBoard = document.getElementById('fm-board');
         const fmControls = document.getElementById('gm-fm-controls');
         fmBoard.innerHTML = '';
@@ -802,20 +896,20 @@
         FAST_MONEY_DATA.forEach((q, i) => {
             const ans1 = state.fastMoney.answers1[i] || { answer: '', score: '' };
             const ans2 = state.fastMoney.answers2[i] || { answer: '', score: '' };
-            const isP2Viewing = state.fastMoney.player === 2 && userRole !== 'gm';
+            const isP2Viewing = state.fastMoney.player === 2 && !state.fastMoney.isRevealed;
             const row = document.createElement('div');
             row.classList.add('fm-question-grid');
             
             if (userRole === 'gm') {
                 row.innerHTML = `
-                <div class="fm-question-text">${q.question}</div>
+                <div class="fm-question-text">${i+1}. ${q.question}</div>
                 <input type="text" class="fm-player-answer" id="fm-ans-1-${i}" value="${ans1.answer}" placeholder="P1 Ans">
                 <input type="number" class="fm-player-score" id="fm-score-1-${i}" value="${ans1.score}" placeholder="P1 Pts">
                 <input type="text" class="fm-player-answer" id="fm-ans-2-${i}" value="${ans2.answer}" placeholder="P2 Ans">
                 <input type="number" class="fm-player-score" id="fm-score-2-${i}" value="${ans2.score}" placeholder="P2 Pts">`;
             } else {
                 row.innerHTML = `
-                <div class="fm-question-text">${q.question}</div>
+                <div class="fm-question-text">${i+1}. ${q.question}</div>
                 <div class="fm-player-answer">${isP2Viewing ? '???' : ans1.answer}</div>
                 <div class="fm-player-score">${isP2Viewing ? '???' : ans1.score}</div>
                 <div class="fm-player-answer">${ans2.answer}</div>
@@ -850,34 +944,88 @@
             const score = parseInt(document.getElementById(`fm-score-${playerNum}-${i}`).value) || 0;
             updates[`fastMoney/answers${playerNum}/${i}`] = { answer, score };
         }
-        if(playerNum === 1) updates['fastMoney/player'] = 2;
+        if(playerNum === 1) {
+             updates['fastMoney/player'] = 2;
+             // Calculate Player 1's score and add to total immediately
+             let p1Score = 0;
+             for(let i=0; i<5; i++) { p1Score += (updates[`fastMoney/answers1/${i}`].score || 0); }
+             updates['fastMoney/totalScore'] = p1Score;
+        }
         updateDatabase(updates);
     }
 
     function revealFMScores() {
         let totalScore = 0;
         const p1ans = [];
+        const updates = {};
+
         for(let i=0; i<5; i++) {
-            totalScore += parseInt(document.getElementById(`fm-score-1-${i}`).value) || 0;
+            const p1Score = parseInt(document.getElementById(`fm-score-1-${i}`).value) || 0;
+            totalScore += p1Score;
             p1ans.push(document.getElementById(`fm-ans-1-${i}`).value.trim().toLowerCase());
+            updates[`fastMoney/answers1/${i}`] = { answer: document.getElementById(`fm-ans-1-${i}`).value, score: p1Score };
         }
         for(let i=0; i<5; i++) {
             const p2ansEl = document.getElementById(`fm-ans-2-${i}`);
-            if(p1ans.includes(p2ansEl.value.trim().toLowerCase()) && p2ansEl.value.trim() !== "") {
+            const p2ans = p2ansEl.value.trim().toLowerCase();
+            const p2ScoreEl = document.getElementById(`fm-score-2-${i}`);
+            let p2Score = parseInt(p2ScoreEl.value) || 0;
+            
+            if(p1ans.includes(p2ans) && p2ans !== "") {
                 p2ansEl.style.backgroundColor = "red";
-                alert(`Duplicate answer detected for question ${i+1}! Player must answer again.`);
-                return;
+                p2Score = 0; // Duplicate answers get 0 points
+                p2ScoreEl.value = 0;
+                playSound('sound-strike');
+            } else {
+                 p2ansEl.style.backgroundColor = "";
             }
-            p2ansEl.style.backgroundColor = "";
-            totalScore += parseInt(document.getElementById(`fm-score-2-${i}`).value) || 0;
+            totalScore += p2Score;
+            updates[`fastMoney/answers2/${i}`] = { answer: p2ansEl.value, score: p2Score };
         }
+        
         document.getElementById('fm-win-message').classList.toggle('hidden', totalScore < 200);
-        updateDatabase({ 'fastMoney/totalScore': totalScore });
+        updates['fastMoney/totalScore'] = totalScore;
+        updates['fastMoney/isRevealed'] = true;
+        updateDatabase(updates);
     }
 
     function endGameAndReset() { set(gameRef, null).then(() => location.reload()); }
+
+    function startInRoundTimer() {
+        if (inRoundTimerInterval) clearInterval(inRoundTimerInterval);
+        
+        let timeLeft = 10;
+        updateDatabase({ 
+            buzzer: { active: false, name: '', team: '' },
+            inRoundTimer: { active: true, timeLeft: timeLeft, timedOut: false } 
+        });
+
+        inRoundTimerInterval = setInterval(() => {
+            timeLeft--;
+            if (timeLeft < 0) {
+                clearInterval(inRoundTimerInterval);
+                inRoundTimerInterval = null;
+                updateDatabase({ inRoundTimer: { active: false, timeLeft: 0, timedOut: true } });
+                playSound('sound-strike');
+            } else {
+                updateDatabase({ 'inRoundTimer/timeLeft': timeLeft });
+            }
+        }, 1000);
+    }
+
+    function resetInRoundTimer() {
+        if (inRoundTimerInterval) clearInterval(inRoundTimerInterval);
+        inRoundTimerInterval = null;
+        updateDatabase({ inRoundTimer: { active: false, timeLeft: 10, timedOut: false } });
+    }
     
     document.addEventListener('DOMContentLoaded', () => {
+        const urlParams = new URLSearchParams(window.location.search);
+        const joinCodeFromUrl = urlParams.get('join');
+        if (joinCodeFromUrl) {
+            document.getElementById('game-code-input').value = joinCodeFromUrl.toUpperCase();
+        }
+
         let listenerAttached = false;
         const codeInput = document.getElementById('game-code-input');
         const errorMsg = document.getElementById('join-error-message');
@@ -951,16 +1099,18 @@
                     if (role === 'player') { 
                         switchScreen('player-screen'); 
                         document.getElementById('player-game-code').textContent = gameCode; 
-                        
-                        const storedName = localStorage.getItem('playerName');
-                        if (storedName) {
-                            document.querySelector('#player-screen h2').textContent = storedName;
-                            document.getElementById('player-registration').style.display = 'none';
-                            document.getElementById('player-buzzer-area').classList.remove('hidden');
-                            document.getElementById('forget-player-btn').classList.remove('hidden');
-                        }
                     } 
-                    else if (role === 'cast') { switchScreen('game-board-screen'); }
+                    else if (role === 'cast') { 
+                        switchScreen('game-board-screen'); 
+                        document.getElementById('cast-game-code-display').textContent = `Join Code: ${gameCode}`;
+                        const joinUrl = window.location.href.split('?')[0] + '?join=' + gameCode;
+                        document.getElementById("qrcode").innerHTML = ''; // Clear previous QR code
+                        new QRCode(document.getElementById("qrcode"), {
+                            text: joinUrl,
+                            width: 100,
+                            height: 100,
+                        });
+                    }
                     listenForUpdates();
                 } else { errorMsg.textContent = "Game code not found."; }
             });
@@ -981,33 +1131,55 @@
             });
         });
 
-        document.getElementById('btn-join-player').addEventListener('click', () => joinGame('player'));
+        document.getElementById('btn-join-player').addEventListener('click', () => {
+            // -- MODIFIED -- Clear any previous player data to force a fresh login
+            localStorage.removeItem('playerName');
+            localStorage.removeItem('playerTeam');
+            joinGame('player');
+        });
         document.getElementById('btn-join-cast').addEventListener('click', () => joinGame('cast'));
         document.getElementById('player-register-btn').addEventListener('click', () => {
             const name = document.getElementById('player-name-input').value.trim();
             const team = document.getElementById('player-team-select').value;
             if (name) {
+                // We still save to localStorage so the buzzer knows the player's name and team
                 localStorage.setItem('playerName', name);
                 localStorage.setItem('playerTeam', team);
                 
                 const playerRef = ref(database, `games/${gameCode}/players`);
                 push(playerRef, { name, team });
 
-                document.querySelector('#player-screen h2').textContent = name;
+                document.getElementById('player-screen-title').textContent = name;
+                const teamName = (team === '1') ? gameState.team1Name : gameState.team2Name;
+                document.getElementById('player-team-name').textContent = `Team: ${teamName}`;
+
                 document.getElementById('player-registration').style.display = 'none';
                 document.getElementById('player-buzzer-area').classList.remove('hidden');
-                document.getElementById('forget-player-btn').classList.remove('hidden');
             }
         });
-        document.getElementById('forget-player-btn').addEventListener('click', () => {
-            localStorage.removeItem('playerName');
-            localStorage.removeItem('playerTeam');
-            location.reload();
-        });
+
         document.getElementById('buzzer-btn').addEventListener('click', () => {
+            // Client-side check to prevent unnecessary transaction calls
             if (gameState.buzzer && gameState.buzzer.active) return;
-            playSound('sound-buzz-in');
-            updateDatabase({ buzzer: { active: true, name: localStorage.getItem('playerName'), team: localStorage.getItem('playerTeam') } });
+
+            const buzzerRef = ref(database, `games/${gameCode}/buzzer`);
+
+            runTransaction(buzzerRef, (currentData) => {
+                // If currentData is null or the buzzer is not active, we can buzz in.
+                if (!currentData || !currentData.active) {
+                    playSound('sound-buzz-in');
+                    return { 
+                        active: true, 
+                        name: localStorage.getItem('playerName'), 
+                        team: localStorage.getItem('playerTeam') 
+                    };
+                } else {
+                    // Someone else already buzzed in. Abort the transaction.
+                    return; // By returning undefined, the transaction is aborted.
+                }
+            }).catch((error) => {
+                console.error("Buzzer transaction failed: ", error);
+            });
         });
         document.getElementById('gm-board-question-display').addEventListener('click', () => {
             if (userRole === 'gm' && !gameState.isQuestionDisplayed) {
@@ -1022,8 +1194,8 @@
         document.getElementById('gm-add-strike').addEventListener('click', addStrike);
         document.getElementById('gm-play-btn').addEventListener('click', () => setControllingTeam(true));
         document.getElementById('gm-pass-btn').addEventListener('click', () => setControllingTeam(false));
-        document.getElementById('gm-second-player-higher').addEventListener('click', () => handleSecondPlayerAnswer(true));
-        document.getElementById('gm-second-player-lower').addEventListener('click', () => handleSecondPlayerAnswer(false));
+        document.getElementById('gm-faceoff-winner-1').addEventListener('click', () => setFaceoffWinner('team1'));
+        document.getElementById('gm-faceoff-winner-2').addEventListener('click', () => setFaceoffWinner('team2'));
         document.getElementById('gm-steal-success-btn').addEventListener('click', () => handleSteal(true));
         document.getElementById('gm-steal-fail-btn').addEventListener('click', () => handleSteal(false));
         document.getElementById('gm-award-points-btn').addEventListener('click', awardPointsToControllingTeam);
@@ -1032,6 +1204,9 @@
         document.getElementById('gm-fm-start-player2').addEventListener('click', e => { startFMTimer(25, 2); e.target.disabled = true; });
         document.getElementById('gm-fm-reveal-scores').addEventListener('click', revealFMScores);
         document.getElementById('gm-fm-end-game').addEventListener('click', endGameAndReset);
+        document.getElementById('gm-fm-new-game').addEventListener('click', startNewGameKeepTeams);
+        document.getElementById('gm-start-timer').addEventListener('click', startInRoundTimer);
+        document.getElementById('gm-reset-timer').addEventListener('click', resetInRoundTimer);
         document.getElementById('gm-reset-buzz').addEventListener('click', () => updateDatabase({ buzzer: { active: false, name: '', team: '' }, faceOff: { status: 'none', firstPlayerTeam: null } }));
         document.getElementById('gm-reveal-all').addEventListener('click', async () => {
             const currentState = (await get(gameRef)).val();
@@ -1039,20 +1214,18 @@
             const questionSet = getCurrentQuestionSet(currentState);
             const q = questionSet[currentState.round];
             if (!q) return;
-            let totalPointsAdded = 0;
+            
             const updates = {};
-            let multiplier = 1;
-            if (currentState.round === 3) multiplier = 2;
-            if (currentState.round >= 4) multiplier = 3;
+            let hadUnrevealedAnswers = false;
 
             q.answers.forEach((answer, i) => {
                 if (!currentState.revealed || !currentState.revealed[i]) {
                     updates[`revealed/${i}`] = true;
-                    totalPointsAdded += (answer.points * multiplier);
+                    hadUnrevealedAnswers = true;
                 }
             });
-            if (totalPointsAdded > 0) {
-                updates['roundPoints'] = currentState.roundPoints + totalPointsAdded;
+
+            if (hadUnrevealedAnswers) {
                 updateDatabase(updates);
             }
         });
@@ -1063,5 +1236,4 @@
 
 </body>
 </html>
-
 
