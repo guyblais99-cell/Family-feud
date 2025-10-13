@@ -324,15 +324,35 @@
             display: inline-block;
             box-shadow: 0 2px 5px rgba(0,0,0,0.1);
         }
-        .in-round-timer-display { /* This class is no longer used but kept for safety */
+        
+        /* --- NEW: STYLES FOR AUDIO UNLOCK OVERLAY --- */
+        #audio-unlock-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(45, 55, 72, 0.95);
+            z-index: 9999;
+            justify-content: center;
+            align-items: center;
+        }
+        #audio-unlock-btn {
+            padding: 25px 50px;
             font-size: 1.5em;
-            font-weight: bold;
-            color: #e53e3e;
-            animation: pulse-orange 0.5s infinite;
+            background-color: #48bb78;
+            color: white;
+            border: none;
+            border-radius: 12px;
+            cursor: pointer;
         }
     </style>
 </head>
 <body>
+
+<div id="audio-unlock-overlay" style="display: none;">
+    <button id="audio-unlock-btn">Click to Start Cast Screen & Enable Audio</button>
+</div>
 
 <div id="app-container">
     
@@ -501,12 +521,12 @@
     </div>
 </div>
 
-<audio id="sound-theme" src=""></audio>
-<audio id="sound-correct" src=""></audio>
-<audio id="sound-strike" src=""></audio>
-<audio id="sound-buzz-in" src=""></audio>
-<audio id="sound-fm-tick" src=""></audio>
-<audio id="sound-fm-timeout" src=""></audio>
+<audio id="sound-theme" src="./theme.mp3"></audio>
+<audio id="sound-correct" src="./correct.mp3"></audio>
+<audio id="sound-strike" src="./strike.mp3"></audio>
+<audio id="sound-buzz-in" src="./buzz.mp3"></audio>
+<audio id="sound-fm-tick" src="./tick.mp3"></audio>
+<audio id="sound-fm-timeout" src="./timeout.mp3"></audio>
 
 <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/9.6.1/firebase-app.js";
@@ -526,7 +546,6 @@
     const database = getDatabase(app);
     let gameRef = null;
     
-    // CORRECTED: Full and structurally valid TOPIC_DATA object
     const TOPIC_DATA = {
         KID_FRIENDLY: {
             'CANADIAN_FUN': { displayName: "Canadian Fun", questions: [ { question: "Name a famous Canadian animal.", answers: [{ text: "Moose", points: 30 }, { text: "Beaver", points: 25 }, { text: "Polar Bear", points: 15 }, { text: "Canada Goose", points: 10 }, { text: "Grizzly Bear", points: 8 }, { text: "Caribou / Reindeer", points: 5 }] }, { question: "Name something you might put maple syrup on (besides pancakes).", answers: [{ text: "Waffles / French Toast", points: 35 }, { text: "Oatmeal / Cereal", points: 25 }, { text: "Ice Cream / Dessert", points: 15 }, { text: "Bacon / Sausage", points: 10 }, { text: "Coffee / Tea", points: 8 }, { text: "Snow (Tire D'érable)", points: 7 }] }, { question: "Name a word Canadians often say.", answers: [{ text: "Eh", points: 40 }, { text: "Sorry", points: 25 }, { text: "Toque", points: 15 }, { text: "Poutine", points: 10 }, { text: "Loonie / Toonie", points: 5 }, { text: "Timmies", points: 5 }] }, { question: "Name a Canadian city beginning with V or H.", answers: [{ text: "Vancouver", points: 40 }, { text: "Halifax", points: 25 }, { text: "Victoria", points: 20 }, { text: "Hamilton", points: 15 }, { text: "Moncton", points: 0 }, { text: "Calgary", points: 0 }] }, { question: "Name something associated with Canadian winter.", answers: [{ text: "Snow / Snowfall", points: 35 }, { text: "Hockey / Skating", points: 25 }, { text: "Toques / Mittens / Scarf", points: 15 }, { text: "Skiing / Snowboarding", points: 10 }, { text: "Plows / Shovels", points: 10 }, { text: "Very Cold / Freezing", points: 5 }] }, { question: "Name a sport played on ice in Canada (other than hockey).", answers: [{ text: "Curling", points: 60 }, { text: "Figure Skating", points: 30 }, { text: "Speed Skating", points: 10 }, { text: "Ice Sledding", points: 0 }, { text: "Broomball", points: 0 }, { text: "Ringette", points: 0 }] }, { question: "Name a cartoon character or movie from Canada.", answers: [{ text: "Paw Patrol", points: 35 }, { text: "Caillou", points: 25 }, { text: "ReBoot", points: 15 }, { text: "Degrassi (Series)", points: 10 }, { text: "The Raccoons (Series)", points: 10 }, { text: "Total Drama Island", points: 5 }] }, { question: "Name a type of berry found in Canada.", answers: [{ text: "Blueberry", points: 40 }, { text: "Strawberry", points: 25 }, { text: "Raspberry", points: 15 }, { text: "Cranberry", points: 10 }, { text: "Saskatoon Berry", points: 10 }, { text: "Cloudberry", points: 0 }] }, { question: "Name a color found on the Canadian flag.", answers: [{ text: "Red", points: 65 }, { text: "White", points: 35 }, { text: "Green", points: 0 }, { text: "Blue", points: 0 }, { text: "Yellow", points: 0 }, { text: "Black", points: 0 }] } ] },
@@ -542,9 +561,11 @@
     // --- State Management
     let userRole = null;
     let gameCode = '';
-    const initialGameState = { round: 0, strikes: 0, roundPoints: 0, team1Score: 0, team2Score: 0, team1Name: 'TEAM 1', team2Name: 'TEAM 2', currentTopicType: 'KID_FRIENDLY', currentTopicKey: '', isQuestionDisplayed: false, revealed: {}, buzzer: { active: false, name: '', team: '' }, faceOff: { status: 'none', firstPlayerTeam: null }, faceOffWinner: null, controllingTeam: null, stealOpportunity: null, gameOver: false, players: {}, fastMoney: { isActive: false, player: 1, answers1: {}, answers2: {}, totalScore: 0, isRevealed: false }, inRoundTimer: { active: false, timeLeft: 10, timedOut: false } };
+    const initialGameState = { round: 0, strikes: 0, roundPoints: 0, team1Score: 0, team2Score: 0, team1Name: 'TEAM 1', team2Name: 'TEAM 2', currentTopicType: 'KID_FRIENDLY', currentTopicKey: '', isQuestionDisplayed: false, revealed: {}, buzzer: { active: false, name: '', team: '' }, faceOff: { status: 'none', firstPlayerTeam: null }, faceOffWinner: null, controllingTeam: null, stealOpportunity: null, gameOver: false, players: {}, fastMoney: { isActive: false, player: 1, answers1: {}, answers2: {}, totalScore: 0, isRevealed: false, timerRunning: false }, inRoundTimer: { active: false, timeLeft: 10, timedOut: false }, soundTrigger: { name: '', timestamp: 0 } };
     let gameState = JSON.parse(JSON.stringify(initialGameState));
     let inRoundTimerInterval = null;
+    let lastSoundTimestamp = 0;
+    let castFmTickInterval = null;
 
     function playSound(id) {
         const sound = document.getElementById(id);
@@ -554,11 +575,16 @@
         }
     }
 
-    // -- MODIFIED -- This function now adds a class to the body for CSS targeting
+    function triggerSoundOnCast(soundId) {
+        if (userRole === 'gm' || userRole === 'player') {
+            updateDatabase({
+                soundTrigger: { name: soundId, timestamp: Date.now() }
+            });
+        }
+    }
+
     function switchScreen(screenId) {
-        // Add a class to the body to lock the viewport ONLY when the player screen is active
         document.body.classList.toggle('player-view-active', screenId === 'player-screen');
-        
         document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
         document.getElementById(screenId).classList.add('active');
     }
@@ -700,7 +726,6 @@
         const stealButtons = document.getElementById('steal-buttons');
         const statusText = document.getElementById('faceoff-status-text');
 
-        // Hide all by default
         faceoffControls.classList.add('hidden');
         winnerControls.classList.add('hidden');
         playPassButtons.classList.add('hidden');
@@ -757,7 +782,7 @@
     async function revealAnswer(index, points) {
         const currentState = (await get(gameRef)).val();
         if (!currentState || (currentState.revealed && currentState.revealed[index])) return;
-        playSound('sound-correct');
+        triggerSoundOnCast('sound-correct');
         const updates = {};
         let multiplier = 1;
         if (currentState.round === 3) multiplier = 2;
@@ -766,7 +791,6 @@
         updates[`revealed/${index}`] = true;
         updates['roundPoints'] = currentState.roundPoints + (points * multiplier);
         
-        // --- MODIFIED Face-off Logic ---
         if (Object.keys(currentState.revealed || {}).length === 0) {
             updates['faceOff'] = { status: 'secondPlayerChance', firstPlayerTeam: `team${currentState.buzzer.team}` };
         } else {
@@ -794,7 +818,7 @@
 
     function addStrike() {
         if (gameState.strikes < 3 && gameState.controllingTeam) {
-            playSound('sound-strike');
+            triggerSoundOnCast('sound-strike');
             const newStrikes = gameState.strikes + 1;
             const updates = { strikes: newStrikes };
             if (newStrikes === 3) {
@@ -806,17 +830,11 @@
 
     function handleSteal(success) {
         const teamToAward = success ? gameState.stealOpportunity : gameState.controllingTeam;
-
-        if (!teamToAward) {
-            console.error("handleSteal failed: Could not determine team to award points.", { success, controllingTeam: gameState.controllingTeam, stealOpportunity: gameState.stealOpportunity });
-            return; 
-        }
-
+        if (!teamToAward) return; 
         const teamNum = teamToAward.slice(-1);
         const scoreKey = `team${teamNum}Score`;
         const currentScore = (teamNum === '1') ? gameState.team1Score : gameState.team2Score;
         const newScore = currentScore + gameState.roundPoints;
-
         const finalState = { ...gameState, [scoreKey]: newScore };
         loadNextQuestion(true, finalState);
     }
@@ -837,21 +855,7 @@
             updateDatabase({ gameOver: true });
             return;
         }
-        
-        const newState = { 
-            ...stateToCarryOver,
-            round: nextRound,
-            strikes: 0,
-            roundPoints: 0,
-            isQuestionDisplayed: false, 
-            revealed: {},
-            buzzer: { active: false, name: '', team: '' },
-            faceOff: { status: 'none', firstPlayerTeam: null },
-            faceOffWinner: null,
-            controllingTeam: null,
-            stealOpportunity: null,
-            gameOver: false
-        };
+        const newState = { ...stateToCarryOver, round: nextRound, strikes: 0, roundPoints: 0, isQuestionDisplayed: false, revealed: {}, buzzer: { active: false, name: '', team: '' }, faceOff: { status: 'none', firstPlayerTeam: null }, faceOffWinner: null, controllingTeam: null, stealOpportunity: null, gameOver: false };
         set(gameRef, newState);
     }
     
@@ -869,17 +873,7 @@
 
     function startFastMoney() { 
         switchScreen('fast-money-screen'); 
-        updateDatabase({ 
-            gameOver: true, 
-            fastMoney: { 
-                isActive: true, 
-                player: 1, 
-                answers1: {}, 
-                answers2: {}, 
-                totalScore: 0,
-                isRevealed: false 
-            } 
-        }); 
+        updateDatabase({ gameOver: true, fastMoney: { isActive: true, player: 1, answers1: {}, answers2: {}, totalScore: 0, isRevealed: false, timerRunning: false } }); 
     }
 
     function renderFastMoneyBoard(state) {
@@ -899,21 +893,10 @@
             const isP2Viewing = state.fastMoney.player === 2 && !state.fastMoney.isRevealed;
             const row = document.createElement('div');
             row.classList.add('fm-question-grid');
-            
             if (userRole === 'gm') {
-                row.innerHTML = `
-                <div class="fm-question-text">${i+1}. ${q.question}</div>
-                <input type="text" class="fm-player-answer" id="fm-ans-1-${i}" value="${ans1.answer}" placeholder="P1 Ans">
-                <input type="number" class="fm-player-score" id="fm-score-1-${i}" value="${ans1.score}" placeholder="P1 Pts">
-                <input type="text" class="fm-player-answer" id="fm-ans-2-${i}" value="${ans2.answer}" placeholder="P2 Ans">
-                <input type="number" class="fm-player-score" id="fm-score-2-${i}" value="${ans2.score}" placeholder="P2 Pts">`;
+                row.innerHTML = `<div class="fm-question-text">${i+1}. ${q.question}</div><input type="text" class="fm-player-answer" id="fm-ans-1-${i}" value="${ans1.answer}" placeholder="P1 Ans"><input type="number" class="fm-player-score" id="fm-score-1-${i}" value="${ans1.score}" placeholder="P1 Pts"><input type="text" class="fm-player-answer" id="fm-ans-2-${i}" value="${ans2.answer}" placeholder="P2 Ans"><input type="number" class="fm-player-score" id="fm-score-2-${i}" value="${ans2.score}" placeholder="P2 Pts">`;
             } else {
-                row.innerHTML = `
-                <div class="fm-question-text">${i+1}. ${q.question}</div>
-                <div class="fm-player-answer">${isP2Viewing ? '???' : ans1.answer}</div>
-                <div class="fm-player-score">${isP2Viewing ? '???' : ans1.score}</div>
-                <div class="fm-player-answer">${ans2.answer}</div>
-                <div class="fm-player-score">${ans2.score}</div>`;
+                row.innerHTML = `<div class="fm-question-text">${i+1}. ${q.question}</div><div class="fm-player-answer">${isP2Viewing ? '???' : ans1.answer}</div><div class="fm-player-score">${isP2Viewing ? '???' : ans1.score}</div><div class="fm-player-answer">${ans2.answer}</div><div class="fm-player-score">${ans2.score}</div>`;
             }
             fmBoard.appendChild(row);
         });
@@ -925,12 +908,15 @@
         let remaining = seconds;
         const timerEl = document.getElementById('fm-timer');
         clearInterval(fmTimerInterval);
+        
+        updateDatabase({ 'fastMoney/timerRunning': true });
+
         fmTimerInterval = setInterval(() => {
             timerEl.textContent = remaining.toString().padStart(2, '0');
-            playSound('sound-fm-tick');
             if (remaining <= 0) {
                 clearInterval(fmTimerInterval);
-                playSound('sound-fm-timeout');
+                triggerSoundOnCast('sound-fm-timeout');
+                updateDatabase({ 'fastMoney/timerRunning': false });
                 if (userRole === 'gm') saveFMAnswers(playerNum);
             }
             remaining--;
@@ -946,7 +932,6 @@
         }
         if(playerNum === 1) {
              updates['fastMoney/player'] = 2;
-             // Calculate Player 1's score and add to total immediately
              let p1Score = 0;
              for(let i=0; i<5; i++) { p1Score += (updates[`fastMoney/answers1/${i}`].score || 0); }
              updates['fastMoney/totalScore'] = p1Score;
@@ -973,9 +958,9 @@
             
             if(p1ans.includes(p2ans) && p2ans !== "") {
                 p2ansEl.style.backgroundColor = "red";
-                p2Score = 0; // Duplicate answers get 0 points
+                p2Score = 0;
                 p2ScoreEl.value = 0;
-                playSound('sound-strike');
+                triggerSoundOnCast('sound-strike');
             } else {
                  p2ansEl.style.backgroundColor = "";
             }
@@ -993,12 +978,8 @@
 
     function startInRoundTimer() {
         if (inRoundTimerInterval) clearInterval(inRoundTimerInterval);
-        
         let timeLeft = 10;
-        updateDatabase({ 
-            buzzer: { active: false, name: '', team: '' },
-            inRoundTimer: { active: true, timeLeft: timeLeft, timedOut: false } 
-        });
+        updateDatabase({ buzzer: { active: false, name: '', team: '' }, inRoundTimer: { active: true, timeLeft: timeLeft, timedOut: false } });
 
         inRoundTimerInterval = setInterval(() => {
             timeLeft--;
@@ -1006,7 +987,7 @@
                 clearInterval(inRoundTimerInterval);
                 inRoundTimerInterval = null;
                 updateDatabase({ inRoundTimer: { active: false, timeLeft: 0, timedOut: true } });
-                playSound('sound-strike');
+                triggerSoundOnCast('sound-strike');
             } else {
                 updateDatabase({ 'inRoundTimer/timeLeft': timeLeft });
             }
@@ -1049,6 +1030,21 @@
                 const newState = snapshot.val();
                 if (!newState) { if(userRole !== 'gm') location.reload(); return; }
                 gameState = newState;
+
+                if (userRole === 'cast') {
+                    if (newState.soundTrigger && newState.soundTrigger.timestamp > lastSoundTimestamp) {
+                        playSound(newState.soundTrigger.name);
+                        lastSoundTimestamp = newState.soundTrigger.timestamp;
+                    }
+
+                    const isTimerRunning = newState.fastMoney && newState.fastMoney.timerRunning;
+                    if (isTimerRunning && !castFmTickInterval) {
+                        castFmTickInterval = setInterval(() => playSound('sound-fm-tick'), 1000);
+                    } else if (!isTimerRunning && castFmTickInterval) {
+                        clearInterval(castFmTickInterval);
+                        castFmTickInterval = null;
+                    }
+                }
                 
                 if (newState.fastMoney && newState.fastMoney.isActive) {
                     if(!document.getElementById('fast-money-screen').classList.contains('active')) switchScreen('fast-money-screen');
@@ -1093,6 +1089,14 @@
             gameCode = codeInput.value.toUpperCase().trim();
             if (gameCode.length < 5) { errorMsg.textContent = "Please enter a valid Game Code."; return; }
             userRole = role;
+
+            const audioOverlay = document.getElementById('audio-unlock-overlay');
+            if (role === 'cast') {
+                audioOverlay.style.display = 'flex';
+            } else {
+                audioOverlay.style.display = 'none';
+            }
+
             gameRef = ref(database, 'games/' + gameCode);
             get(gameRef).then((snapshot) => {
                 if (snapshot.exists()) {
@@ -1104,17 +1108,22 @@
                         switchScreen('game-board-screen'); 
                         document.getElementById('cast-game-code-display').textContent = `Join Code: ${gameCode}`;
                         const joinUrl = window.location.href.split('?')[0] + '?join=' + gameCode;
-                        document.getElementById("qrcode").innerHTML = ''; // Clear previous QR code
-                        new QRCode(document.getElementById("qrcode"), {
-                            text: joinUrl,
-                            width: 100,
-                            height: 100,
-                        });
+                        document.getElementById("qrcode").innerHTML = '';
+                        new QRCode(document.getElementById("qrcode"), { text: joinUrl, width: 100, height: 100 });
                     }
                     listenForUpdates();
                 } else { errorMsg.textContent = "Game code not found."; }
             });
         };
+
+        // NEW: Event listener for the audio unlock button
+        document.getElementById('audio-unlock-btn').addEventListener('click', () => {
+            document.getElementById('audio-unlock-overlay').style.display = 'none';
+            const themeSound = document.getElementById('sound-theme');
+            if (themeSound && themeSound.src) {
+                themeSound.play().catch(e => console.error("Audio unlock failed:", e));
+            }
+        });
 
         document.getElementById('btn-create-gm').addEventListener('click', () => {
             gameCode = Math.random().toString(36).substring(2, 10).toUpperCase();
@@ -1125,14 +1134,10 @@
                 document.getElementById('gm-game-code').textContent = gameCode;
                 populateTopicNames();
                 listenForUpdates();
-            }).catch(e => {
-                console.error("Firebase set failed:", e);
-                errorMsg.textContent = "Error creating game: " + e.message;
-            });
+            }).catch(e => { errorMsg.textContent = "Error creating game: " + e.message; });
         });
 
         document.getElementById('btn-join-player').addEventListener('click', () => {
-            // -- MODIFIED -- Clear any previous player data to force a fresh login
             localStorage.removeItem('playerName');
             localStorage.removeItem('playerTeam');
             joinGame('player');
@@ -1142,45 +1147,31 @@
             const name = document.getElementById('player-name-input').value.trim();
             const team = document.getElementById('player-team-select').value;
             if (name) {
-                // We still save to localStorage so the buzzer knows the player's name and team
                 localStorage.setItem('playerName', name);
                 localStorage.setItem('playerTeam', team);
-                
                 const playerRef = ref(database, `games/${gameCode}/players`);
                 push(playerRef, { name, team });
-
                 document.getElementById('player-screen-title').textContent = name;
                 const teamName = (team === '1') ? gameState.team1Name : gameState.team2Name;
                 document.getElementById('player-team-name').textContent = `Team: ${teamName}`;
-
                 document.getElementById('player-registration').style.display = 'none';
                 document.getElementById('player-buzzer-area').classList.remove('hidden');
             }
         });
 
         document.getElementById('buzzer-btn').addEventListener('click', () => {
-            // Client-side check to prevent unnecessary transaction calls
             if (gameState.buzzer && gameState.buzzer.active) return;
-
             const buzzerRef = ref(database, `games/${gameCode}/buzzer`);
-
             runTransaction(buzzerRef, (currentData) => {
-                // If currentData is null or the buzzer is not active, we can buzz in.
                 if (!currentData || !currentData.active) {
-                    playSound('sound-buzz-in');
-                    return { 
-                        active: true, 
-                        name: localStorage.getItem('playerName'), 
-                        team: localStorage.getItem('playerTeam') 
-                    };
+                    triggerSoundOnCast('sound-buzz-in');
+                    return { active: true, name: localStorage.getItem('playerName'), team: localStorage.getItem('playerTeam') };
                 } else {
-                    // Someone else already buzzed in. Abort the transaction.
-                    return; // By returning undefined, the transaction is aborted.
+                    return; 
                 }
-            }).catch((error) => {
-                console.error("Buzzer transaction failed: ", error);
-            });
+            }).catch((error) => { console.error("Buzzer transaction failed: ", error); });
         });
+
         document.getElementById('gm-board-question-display').addEventListener('click', () => {
             if (userRole === 'gm' && !gameState.isQuestionDisplayed) {
                 updateDatabase({ isQuestionDisplayed: true });
@@ -1214,17 +1205,14 @@
             const questionSet = getCurrentQuestionSet(currentState);
             const q = questionSet[currentState.round];
             if (!q) return;
-            
             const updates = {};
             let hadUnrevealedAnswers = false;
-
             q.answers.forEach((answer, i) => {
                 if (!currentState.revealed || !currentState.revealed[i]) {
                     updates[`revealed/${i}`] = true;
                     hadUnrevealedAnswers = true;
                 }
             });
-
             if (hadUnrevealedAnswers) {
                 updateDatabase(updates);
             }
@@ -1236,4 +1224,3 @@
 
 </body>
 </html>
-
